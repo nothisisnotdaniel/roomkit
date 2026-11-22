@@ -15,7 +15,7 @@ internal sealed class SampleServerFactory : IAsyncDisposable
 
     private readonly WebApplication app;
 
-    public SampleServerFactory(string factoryRoot, string environment = "Production")
+    public SampleServerFactory(string factoryRoot, string environment = "Production", Action<RoomRoutes>? map = null)
     {
         TokenFile = Path.Combine(tokenFolder.Path, "SampleRoom", AccessToken.FileName);
         StringWriter error = new();
@@ -31,7 +31,7 @@ internal sealed class SampleServerFactory : IAsyncDisposable
             error,
             SampleRoom.Options,
             SampleRoom.Jobs,
-            SampleRoom.Map,
+            map ?? SampleRoom.Map,
             null,
             builder =>
             {
