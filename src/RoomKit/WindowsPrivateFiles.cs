@@ -59,8 +59,12 @@ internal static class WindowsPrivateFiles
             FileShare.ReadWrite, 0, OpenExisting, OpenReparsePoint | BackupSemantics, 0);
         try
         {
-            if (parent.IsInvalid || (File.GetAttributes(parent) & (FileAttributes.Directory | FileAttributes.ReparsePoint))
-                != FileAttributes.Directory)
+            if (parent.IsInvalid)
+            {
+                throw FileError(Marshal.GetLastPInvokeError());
+            }
+
+            if ((File.GetAttributes(parent) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory)
             {
                 throw new UnauthorizedAccessException();
             }
@@ -78,7 +82,8 @@ internal static class WindowsPrivateFiles
 
     public static byte[]? Read(FileInfo file, long maxBytes)
     {
-        using FileStream directory = OpenDirectory(file.Directory!);
+        CheckName(file.Name);
+        using FileStream directory = OpenDirectory(file.Directory ?? throw new UnauthorizedAccessException());
         const uint GenericRead = 0x80000000;
         using SafeFileHandle handle = OpenChild(directory, file.Name, GenericRead, FileShare.Read | FileShare.Delete);
         if ((File.GetAttributes(handle) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
@@ -93,11 +98,7 @@ internal static class WindowsPrivateFiles
 
     public static void Replace(FileStream directory, string name, byte[] bytes)
     {
-        if (name.Length == 0 || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-        {
-            throw new UnauthorizedAccessException();
-        }
-
+        CheckName(name);
         const uint WriteAndDelete = 0x40000000 | (uint)FileSystemRights.Delete;
         using SafeFileHandle handle = OpenChild(directory, "." + Guid.NewGuid().ToString("N") + ".tmp",
             WriteAndDelete, FileShare.None, FilePermissions().GetSecurityDescriptorBinaryForm());
@@ -119,6 +120,14 @@ internal static class WindowsPrivateFiles
 
     private static void CheckHandle(FileStream stream) =>
         CheckDescriptor(new RawSecurityDescriptor(stream.GetAccessControl().GetSecurityDescriptorBinaryForm(), 0), User);
+
+    private static void CheckName(string name)
+    {
+        if (name.Length == 0 || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            throw new UnauthorizedAccessException();
+        }
+    }
 
     // NT relative names are resolved from the verified directory object, independent of how the
     // caller reached it (including through a junction higher up in a custom token path).
@@ -145,7 +154,7 @@ internal static class WindowsPrivateFiles
             if (status < 0)
             {
                 handle.Dispose();
-                throw NativeError(status);
+                throw FileError(RtlNtStatusToDosError(status));
             }
 
             return handle;
@@ -168,13 +177,15 @@ internal static class WindowsPrivateFiles
             int status = NtSetInformationFile(child, out _, buffer, (uint)info.Length, 65 /* FileRenameInformationEx */);
             if (status < 0)
             {
-                throw NativeError(status);
+                throw FileError(RtlNtStatusToDosError(status));
             }
         }
     }
 
-    private static IOException NativeError(int status) =>
-        new("Private file operation failed.", new System.ComponentModel.Win32Exception(RtlNtStatusToDosError(status)));
+    // Only ERROR_FILE_NOT_FOUND and ERROR_PATH_NOT_FOUND mean a token may be created on first use.
+    private static IOException FileError(int code) => code is 2 or 3
+        ? new FileNotFoundException("Private file or directory is missing.")
+        : new IOException("Private file operation failed.", new System.ComponentModel.Win32Exception(code));
 
     [StructLayout(LayoutKind.Sequential)]
     private unsafe struct UnicodeString
@@ -218,7 +229,7 @@ internal static class WindowsPrivateFiles
     private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass,
         ref byte buffer, uint length);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(string path, uint access, FileShare share, nint security,
         uint disposition, uint flags, nint template);
 

@@ -77,8 +77,13 @@ internal static class AccessToken
     {
         if (OperatingSystem.IsWindows())
         {
-            DirectoryInfo folder = new FileInfo(ResolvePath(configured)).Directory!;
-            if (folder.Exists || folder.LinkTarget is not null)
+            DirectoryInfo? folder = new FileInfo(ResolvePath(configured)).Directory;
+            if (folder is null)
+            {
+                return "Set --TokenFile to a file inside a private directory.";
+            }
+
+            if (folder.Exists || folder.LinkTarget is not null || File.Exists(folder.FullName))
             {
                 try
                 {
@@ -156,30 +161,32 @@ internal static class AccessToken
         try
         {
             FileInfo file = new(path);
-            if (file.LinkTarget is not null || Directory.Exists(path))
+            byte[]? bytes;
+            if (OperatingSystem.IsWindows())
             {
-                return Invalid();
+                // Determine absence, permissions and contents through the same verified parent.
+                bytes = WindowsPrivateFiles.Read(file, MaxBytes);
             }
-
-            if (!file.Exists)
+            else
             {
-                if (OperatingSystem.IsWindows() && file.Directory is { } folder
-                    && (folder.Exists || folder.LinkTarget is not null))
+                if (file.LinkTarget is not null || Directory.Exists(path))
                 {
-                    WindowsPrivateFiles.Check(folder);
+                    return Invalid();
                 }
 
-                return new TokenFileRead(TokenFileState.Missing, null);
+                if (!file.Exists)
+                {
+                    return new TokenFileRead(TokenFileState.Missing, null);
+                }
+
+                if ((File.GetUnixFileMode(path) & GroupOrOther) != 0)
+                {
+                    return Invalid();
+                }
+
+                bytes = SafeFileReader.ReadBytes(path, MaxBytes);
             }
 
-            if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & GroupOrOther) != 0)
-            {
-                return Invalid();
-            }
-
-            byte[]? bytes = OperatingSystem.IsWindows()
-                ? WindowsPrivateFiles.Read(file, MaxBytes)
-                : SafeFileReader.ReadBytes(path, MaxBytes);
             if (bytes is null)
             {
                 return Invalid();
@@ -188,6 +195,10 @@ internal static class AccessToken
             string text = SafeFileReader.Decode(bytes);
             string token = text.EndsWith('\n') ? text[..^1] : text;
             return IsValid(token) ? new TokenFileRead(TokenFileState.Valid, token) : Invalid();
+        }
+        catch (FileNotFoundException) when (OperatingSystem.IsWindows())
+        {
+            return new TokenFileRead(TokenFileState.Missing, null);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -201,7 +212,12 @@ internal static class AccessToken
     public static string? Replace(string path, RandomFill random)
     {
         string full = Path.GetFullPath(path);
-        string folder = Path.GetDirectoryName(full)!;
+        string? folder = Path.GetDirectoryName(full);
+        if (folder is null)
+        {
+            return null;
+        }
+
         string temp = Path.Combine(folder, "." + FileName + "-" + Guid.NewGuid().ToString("N") + ".tmp");
         string token = Generate(random);
         try

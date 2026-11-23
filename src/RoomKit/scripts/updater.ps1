@@ -566,11 +566,38 @@ function Save-UpdateResult($Work, $Tag, $Previous, $Reason) {
     Write-PrivateText 'pending-result.json' (($record | ConvertTo-Json -Compress) + [char]10) $Work
 }
 
+function Read-StagedRecord($Text) {
+    # These private records are written by Save-UpdateResult. Round-trip its compact encoding
+    # so a duplicate property or a top-level array cannot be flattened by Windows PowerShell.
+    if (!$Text -or !$Text.StartsWith('{')) { throw 'Invalid staged update result.' }
+    $record = ConvertFrom-Json -InputObject $Text
+    $detail = if ($record.result -ceq 'updated') { 'previous' } else { 'reason' }
+    $fields = @($record.PSObject.Properties)
+    if ($fields.Count -ne 4 -or $Text -cne (($record | ConvertTo-Json -Compress) + [char]10)) {
+        throw 'Invalid staged update result.'
+    }
+    foreach ($field in $fields) {
+        if ($field.Name -cnotin 'run','result','version',$detail -or $field.Value -isnot [string]) {
+            throw 'Invalid staged update result.'
+        }
+    }
+    if ($record.run -cnotmatch '\A[0-9]{8}T[0-9]{6}Z\z' -or $record.version.Length -gt 128 -or
+        ('v' + $record.version) -cnotmatch $TagPattern) { throw 'Invalid staged update result.' }
+    if ($record.result -ceq 'updated') {
+        if ($record.previous.Length -gt 128 -or ('v' + $record.previous) -cnotmatch $TagPattern -or
+            (Compare-Tags ('v' + $record.version) ('v' + $record.previous)) -le 0) { throw 'Invalid staged update result.' }
+    } elseif ($record.result -cne 'update_failed' -or $record.reason -cnotin 'check','swap','bootstrap_failed','no_answer','rollback_failed') {
+        throw 'Invalid staged update result.'
+    }
+    return $record
+}
+
 # The pending record and the previous code survive a sharing error on the public result.
 # Replaying the same bytes preserves the run identifier used for notification deduplication.
 function Publish-StagedResult($Work) {
     $text = Read-PrivateText 'pending-result.json' 4KB $Work
-    $record = ConvertFrom-Json -InputObject $text
+    $record = Read-StagedRecord $text
+    $reason = $record.reason
     if ($record.result -ceq 'updated') {
         $target = 'v' + $record.version
         $previous = 'v' + $record.previous
@@ -581,18 +608,19 @@ function Publish-StagedResult($Work) {
             if (Wait-ServerHealth $record.version) {
                 Write-PrivateText 'installed-release' ($target + [char]10)
             } else {
-                $failure = 'no_answer'
+                $reason = 'no_answer'
                 try {
                     $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
                     Restore-RoomRelease $Work $previous $backup $backup
-                } catch { $failure = 'rollback_failed' }
-                Save-UpdateResult $Work $target $previous $failure
+                } catch { $reason = 'rollback_failed' }
+                Save-UpdateResult $Work $target $previous $reason
                 $text = Read-PrivateText 'pending-result.json' 4KB $Work
             }
         }
     }
     Write-PrivateText 'update-result.json' $text
     [IO.File]::Delete((Join-Path $Work 'pending-result.json'))
+    return $reason
 }
 
 function Complete-StagedResults {
@@ -600,9 +628,8 @@ function Complete-StagedResults {
         if ($stage.Name -cnotmatch '\Astage-[0-9a-f]{32}\z') { continue }
         Assert-PrivatePath $stage.FullName
         if ([IO.File]::Exists((Join-Path $stage.FullName 'pending-result.json'))) {
-            Publish-StagedResult $stage.FullName
-            $saved = ConvertFrom-Json -InputObject (Read-PrivateText 'update-result.json' 4KB)
-            if ($saved.reason -cne 'rollback_failed') { Remove-CodeDirectory $stage.FullName }
+            $reason = Publish-StagedResult $stage.FullName
+            if ($reason -cne 'rollback_failed') { Remove-CodeDirectory $stage.FullName }
         }
     }
 }
@@ -617,7 +644,7 @@ function Invoke-RoomUpdate($Root) {
         $settings = Get-UpdateSettings
         if (!$settings.Enabled) { return 'off' }
         $installed = ('' + (Read-PrivateText 'installed-release' 200)).TrimEnd([char]10)
-        if ($installed -cnotmatch $TagPattern) { return 'not_release' }
+        if ($installed.Length -gt 129 -or $installed -cnotmatch $TagPattern) { return 'not_release' }
         $now = Get-UpdateTime
         if (!(Test-UpdateDue $now $settings.Interval)) { return 'not_due' }
         if (Test-JobRunning $Root) { return 'job_running' }
@@ -637,7 +664,7 @@ function Invoke-RoomUpdate($Root) {
                 $reason = Switch-RoomRelease $work $tag $installed -RecordResult
             }
             if ($reason) { Save-UpdateResult $work $tag $installed $reason }
-            Publish-StagedResult $work
+            $reason = Publish-StagedResult $work
             if ($reason) { return $reason }
             return 'updated'
         } finally {
