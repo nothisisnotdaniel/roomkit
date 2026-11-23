@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>RoomKit</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- The shared web files are served at the app's root, so their URLs stay /app.css, /token.js and so on. -->
     <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>

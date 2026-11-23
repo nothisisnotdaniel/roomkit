@@ -95,9 +95,16 @@ public static class RoomKitApp
         RoomContext.Use(options, jobs);
 
         // Content root (and so wwwroot) is the server's own output folder, never the current directory.
+        string[]? launchArgs = FactoryRootLocator.DecodeScheduledArguments(args);
+        if (launchArgs is null)
+        {
+            error.WriteLine(FactoryRootLocator.NotFoundText);
+            return null;
+        }
+
         WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
-            Args = args,
+            Args = launchArgs,
             ContentRootPath = AppContext.BaseDirectory,
             WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
         });
@@ -116,11 +123,12 @@ public static class RoomKitApp
             return null;
         }
 
-        string tokenPath = AccessToken.ResolvePath(builder.Configuration[AccessToken.ConfigKey]);
+        string? configuredToken = builder.Configuration[AccessToken.ConfigKey];
+        string tokenPath = AccessToken.ResolvePath(configuredToken);
         TokenFileRead token = AccessToken.Read(tokenPath);
         if (token.State == TokenFileState.Invalid)
         {
-            error.WriteLine(AccessToken.InvalidText);
+            error.WriteLine(AccessToken.InvalidText(configuredToken));
             return null;
         }
 
@@ -128,11 +136,11 @@ public static class RoomKitApp
         {
             if (AccessToken.Replace(tokenPath, AccessToken.SystemRandom) is null)
             {
-                error.WriteLine(AccessToken.WriteFailedText);
+                error.WriteLine(AccessToken.WriteFailedText(configuredToken));
                 return null;
             }
 
-            error.WriteLine(AccessToken.CreatedText);
+            error.WriteLine(AccessToken.CreatedText(configuredToken));
         }
 
         // The per-request "Request starting/finished" lines hold the Host header; a refused Host is never logged.

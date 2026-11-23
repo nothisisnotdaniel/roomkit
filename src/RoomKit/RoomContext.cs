@@ -18,6 +18,13 @@ internal static partial class RoomContext
         ? @".\" + Options.ShortName.ToLowerInvariant() + ".exe"
         : "dotnet run --project src/" + Options.ShortName + ".Server --";
 
+    // Windows PowerShell also accepts U+2018 through U+201B as single-quote delimiters.
+    public static string PowerShellLiteral(string value) =>
+        "'" + SingleQuote().Replace(value, "$&$&") + "'";
+
+    [GeneratedRegex("['\u2018-\u201b]")]
+    private static partial Regex SingleQuote();
+
     private static Configured Current =>
         Volatile.Read(ref current) ?? throw new InvalidOperationException("RoomKit is not configured.");
 

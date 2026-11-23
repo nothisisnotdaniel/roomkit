@@ -1,5 +1,5 @@
 #requires -Version 5.1
-param([Alias('FactoryRoot')][string]$UpdateFactoryRoot)
+param([Alias('FactoryRoot')][string]$UpdateFactoryRoot, [string]$FactoryRootBase64)
 
 # roomkit:app-begin
 $DataFolder = 'RoomKit'
@@ -60,16 +60,18 @@ function Initialize-Support {
     Assert-PrivatePath $Support
 }
 
-function Read-PrivateText($Name, $Limit) {
-    $path = Join-Path $Support $Name
-    if (-not [IO.File]::Exists($path)) { return }
-    Assert-PrivatePath $path
-    $stream = [IO.File]::OpenRead($path)
+function Read-PrivateText($Name, $Limit, $Folder = $Support) {
+    $path = Join-Path $Folder $Name
+    Initialize-FileReader
+    $file = [RoomKit.UpdateEntry]::Open($path, $false)
+    if (!$file) { return }
     try {
-        if ($stream.Length -gt $Limit) { return }
-        $reader = [IO.StreamReader]::new($stream, $Utf8, $false)
-        return $reader.ReadToEnd()
-    } finally { $stream.Dispose() }
+        Assert-PrivatePath $path
+        $stream = [IO.FileStream]::new($file, [IO.FileAccess]::Read)
+        try {
+            if ($stream.Length -le $Limit) { return Read-LimitedText $stream $Limit }
+        } finally { $stream.Dispose() }
+    } finally { $file.Dispose() }
 }
 
 function New-PrivateFile($Path) {
@@ -83,9 +85,9 @@ function New-PrivateFile($Path) {
     return [IO.FileStream]::new($Path, 'CreateNew', [Security.AccessControl.FileSystemRights]::Write, 'None', 4096, 'None', $acl)
 }
 
-function Write-PrivateText($Name, $Value) {
-    $path = Join-Path $Support $Name
-    $temp = Join-Path $Support ([IO.Path]::GetRandomFileName())
+function Write-PrivateText($Name, $Value, $Folder = $Support) {
+    $path = Join-Path $Folder $Name
+    $temp = Join-Path $Folder ([IO.Path]::GetRandomFileName())
     try {
         $bytes = $Utf8.GetBytes($Value)
         $stream = New-PrivateFile $temp
@@ -127,27 +129,98 @@ function Get-UpdateSettings {
 function Test-UpdateDue($Now, $Interval) {
     if ([IO.File]::Exists((Join-Path $Support 'first-check'))) { return $true }
     try { $stamp = Read-PrivateText 'last-check' 32 }
-    catch [Text.DecoderFallbackException] { return $true }
+    catch { return $true } # An unreadable or unsafe stamp cannot postpone a check.
     [long]$last = 0
     if ($stamp -cnotmatch '\A[0-9]+\n?\z' -or -not [long]::TryParse($stamp, [ref]$last)) { return $true }
     $elapsed = $Now.ToUnixTimeSeconds() - $last
     return $elapsed -lt 0 -or $elapsed -ge ($Interval * 60 - 60)
 }
 
-function Test-JobRunning($Root) {
-    if (-not [IO.Directory]::Exists($Root)) { return $true }
-    $jobs = Join-Path $Root $JobsFolder
-    if (-not [IO.Directory]::Exists($jobs)) { return $false }
-    foreach ($dir in (Get-ChildItem -LiteralPath $jobs -Directory)) {
-        if ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $true }
-        $path = Join-Path $dir.FullName $JobFile
-        if (-not [IO.File]::Exists($path)) { continue }
-        $file = [IO.FileInfo]::new($path)
-        if ($file.Length -gt 64KB -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $true }
-        $job = [IO.File]::ReadAllText($path) | ConvertFrom-Json
-        if ($job.stage -cin 'spike','spec','build','review') { return $true }
+function Initialize-FileReader {
+    if ('RoomKit.UpdateEntry' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace RoomKit {
+    public static class UpdateEntry {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFile(string path, uint access, FileShare share, IntPtr security,
+            uint disposition, uint flags, IntPtr template);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int kind,
+            out AttributeTag info, uint size);
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AttributeTag { public FileAttributes Attributes; public uint Tag; }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder path, uint size, uint flags);
+
+        public static SafeFileHandle Open(string path, bool directory) {
+            // OPEN_REPARSE_POINT | BACKUP_SEMANTICS. Deny write/delete sharing until children have been read.
+            SafeFileHandle handle = CreateFile(path, 0x80000000, FileShare.Read, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+            if (handle.IsInvalid) {
+                int error = Marshal.GetLastWin32Error();
+                handle.Dispose();
+                if (error == 2 || error == 3) return null;
+                throw new Win32Exception(error);
+            }
+            try {
+                AttributeTag info;
+                if (!GetFileInformationByHandleEx(handle, 9, out info, 8)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                FileAttributes kind = info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint | FileAttributes.Device);
+                if (kind != (directory ? FileAttributes.Directory : 0)) throw new IOException("Unsafe file or directory.");
+                return handle;
+            } catch { handle.Dispose(); throw; }
+        }
+
+        public static string FinalPath(SafeFileHandle handle) {
+            StringBuilder path = new StringBuilder(32768);
+            uint length = GetFinalPathNameByHandle(handle, path, (uint)path.Capacity, 0);
+            if (length == 0 || length >= path.Capacity) throw new IOException("Cannot resolve the factory root.");
+            return path.ToString();
+        }
     }
-    return $false
+}
+'@
+}
+
+function Test-JobRunning($Root) {
+    $parents = [Collections.Generic.Stack[IDisposable]]::new()
+    try {
+        Initialize-FileReader
+        $rootHandle = [RoomKit.UpdateEntry]::Open($Root, $true)
+        if (!$rootHandle) { return $true }
+        $parents.Push($rootHandle)
+        $jobs = [RoomKit.UpdateEntry]::FinalPath($rootHandle)
+        foreach ($part in $JobsFolder.Split('/')) {
+            $jobs = [IO.Path]::Combine($jobs, $part)
+            $handle = [RoomKit.UpdateEntry]::Open($jobs, $true)
+            if (!$handle) { return $false }
+            $parents.Push($handle)
+        }
+        # Directory enumeration includes hidden jobs. Keep every directory handle until its children are checked.
+        foreach ($path in [IO.Directory]::EnumerateDirectories($jobs)) {
+            $folder = [RoomKit.UpdateEntry]::Open($path, $true)
+            if (!$folder) { return $true }
+            try {
+                $file = [RoomKit.UpdateEntry]::Open([IO.Path]::Combine($path, $JobFile), $false)
+                if (!$file) { continue }
+                try {
+                    $stream = [IO.FileStream]::new($file, [IO.FileAccess]::Read)
+                    try { $json = Read-LimitedText $stream 64KB -DetectEncoding } finally { $stream.Dispose() }
+                } finally { $file.Dispose() }
+                if (!$json.TrimStart().StartsWith('{')) { return $true }
+                $job = ConvertFrom-Json -InputObject $json
+                if ($job.stage -isnot [string] -or !$job.stage -or $job.stage -cin 'spike','spec','build','review') { return $true }
+            } finally { $folder.Dispose() }
+        }
+        return $false
+    } catch { return $true }
+    finally { while ($parents.Count) { $parents.Pop().Dispose() } }
 }
 
 # Only stable and develop.N are release channels. Compare numeric identifiers as digit strings
@@ -180,18 +253,51 @@ function Compare-Tags($Left, $Right) {
     return $leftIds.Count.CompareTo($rightIds.Count)
 }
 
+function Open-WebResponse([uri]$Uri, [int]$TimeoutMs) {
+    $request = [Net.HttpWebRequest]::Create($Uri)
+    $request.AllowAutoRedirect = $false
+    $request.UserAgent = $TaskPrefix
+    $request.Timeout = $TimeoutMs
+    $request.ReadWriteTimeout = $TimeoutMs
+    return $request.GetResponse()
+}
+
+function Read-LimitedText($Stream, $Limit, [switch]$DetectEncoding) {
+    $output = [IO.MemoryStream]::new()
+    try {
+        Copy-LimitedStream $Stream $output $Limit
+        if ($DetectEncoding) {
+            # Keep the BOM handling of ReadAllText for existing job records, after the byte cap.
+            $output.Position = 0
+            $reader = [IO.StreamReader]::new($output, $Utf8, $true)
+            try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+        }
+        return $Utf8.GetString($output.ToArray())
+    } finally { $output.Dispose() }
+}
+
+function Get-ResponseText([uri]$Uri, $Limit, $TimeoutMs) {
+    $response = Open-WebResponse $Uri $TimeoutMs
+    try {
+        if ([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt $Limit) { throw 'Invalid response.' }
+        return Read-LimitedText $response.GetResponseStream() $Limit
+    } finally { $response.Dispose() }
+}
+
 function Get-ReleasePage($Page) {
-    Invoke-RestMethod -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0 -Headers @{ 'User-Agent' = $TaskPrefix } -Uri (
-        "https://api.github.com/repos/$Repository/releases?per_page=100&page=$Page")
+    $json = Get-ResponseText "https://api.github.com/repos/$Repository/releases?per_page=100&page=$Page" 1MB 30000
+    if (!$json.TrimStart().StartsWith('[')) { throw 'Expected a release list.' }
+    ConvertFrom-Json -InputObject $json | ForEach-Object { $_ }
 }
 
 function Get-LatestTag($Channel) {
     $best = $null
-    for ($page = 1; ; $page++) {
+    for ($page = 1; $page -le 10; $page++) {
         $releases = @(Get-ReleasePage $page | ForEach-Object { $_ })
+        if ($releases.Count -gt 100) { throw 'Invalid release page size.' }
         foreach ($release in $releases) {
             $tag = $release.tag_name
-            if ($release.draft -or $tag.Length -gt 129 -or $tag -cnotmatch $TagPattern) { continue }
+            if ($release.draft -or $tag -isnot [string] -or $tag.Length -gt 129 -or $tag -cnotmatch $TagPattern) { continue }
             if ($tag.Contains('-')) {
                 if ($Channel -cne 'develop' -or $tag -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+-develop\.[0-9]+\z') { continue }
             } elseif ($release.prerelease) { continue }
@@ -199,24 +305,27 @@ function Get-LatestTag($Channel) {
         }
         if ($releases.Count -lt 100) { return $best }
     }
+    throw 'Release list exceeds the scan limit.'
 }
 
 # All asset names come from the configured repository and a validated tag. Follow only HTTPS
 # redirects to GitHub's release asset hosts. Enforce the cap even without Content-Length.
 function Save-ReleaseAsset([uri]$Uri, $Path, [long]$Limit) {
+    $repositoryPath = $Uri.AbsolutePath
     for ($redirect = 0; $redirect -lt 6; $redirect++) {
-        if ($Uri.Scheme -ne 'https' -or $Uri.Host -notin 'github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') {
-            throw 'Unexpected release URL.'
+        if ($Uri.Scheme -ne 'https' -or $Uri.Port -ne 443 -or $Uri.UserInfo -or
+            ($Uri.Host -eq 'github.com' -and $Uri.AbsolutePath -cne $repositoryPath) -or
+            $Uri.Host -notin 'github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') {
+            throw [IO.InvalidDataException]::new('Unexpected release URL.')
         }
-        $request = [Net.HttpWebRequest]::Create($Uri)
-        $request.AllowAutoRedirect = $false
-        $request.UserAgent = $TaskPrefix
-        $request.Timeout = 30000
-        $request.ReadWriteTimeout = 30000
-        $response = $request.GetResponse()
+        $response = Open-WebResponse $Uri 30000
         try {
             if ([int]$response.StatusCode -in 301,302,303,307,308) {
-                $Uri = [uri]::new($Uri, $response.Headers['Location'])
+                $next = $null
+                if (!$response.Headers['Location'] -or ![uri]::TryCreate($Uri, $response.Headers['Location'], [ref]$next)) {
+                    throw [IO.InvalidDataException]::new('Invalid release redirect.')
+                }
+                $Uri = $next
                 continue
             }
             if ([int]$response.StatusCode -ne 200) { throw 'Download failed.' }
@@ -227,13 +336,13 @@ function Save-ReleaseAsset([uri]$Uri, $Path, [long]$Limit) {
             return
         } finally { $response.Dispose() }
     }
-    throw 'Too many release redirects.'
+    throw [IO.InvalidDataException]::new('Too many release redirects.')
 }
 
 function Copy-LimitedStream($Source, $Destination, [long]$Limit) {
     $buffer = [byte[]]::new(65536)
     [long]$count = 0
-    while (($read = $Source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+    while (($read = $Source.Read($buffer, 0, [int][Math]::Min($buffer.Length, $Limit - $count + 1))) -gt 0) {
         $count += $read
         if ($count -gt $Limit) { throw [IO.InvalidDataException]::new('Content exceeds limit.') }
         $Destination.Write($buffer, 0, $read)
@@ -334,8 +443,11 @@ function Get-ListenerPid {
 }
 
 function Get-HealthVersion {
-    $answer = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$AppPort/health" -TimeoutSec 2 -MaximumRedirection 0
-    return $answer.version
+    $json = Get-ResponseText "http://127.0.0.1:$AppPort/health" 4KB 2000
+    if ($json.TrimStart().StartsWith('{')) {
+        $answer = ConvertFrom-Json -InputObject $json
+        if ($answer.PSObject.Properties.Name -ccontains 'version' -and $answer.version -is [string]) { return $answer.version }
+    }
 }
 
 function Wait-RoomPoll { Start-Sleep -Milliseconds 250 }
@@ -389,7 +501,21 @@ function Remove-CodeDirectory($Path) {
 
 # The updater and server live in one directory. Each rename changes both, including on rollback.
 # On an incomplete recovery leave the previous directory on disk for the operator.
-function Switch-RoomRelease($Work, $Tag, $Previous, $Register, $RestoreTasks) {
+function Restore-RoomRelease($Work, $Previous, $MovedNew, $MovedOld, $RestoreTasks) {
+    $server = Join-Path $Support 'server'
+    if ($MovedNew) {
+        Stop-RoomServer
+        [IO.Directory]::Move($server, (Join-Path $Work 'new'))
+    }
+    if ($MovedOld) { [IO.Directory]::Move((Join-Path $Work 'previous'), $server) }
+    if ($RestoreTasks) { & $RestoreTasks }
+    if ($Previous) {
+        Start-RoomServer
+        if (!(Wait-ServerHealth $Previous.Substring(1))) { throw 'Previous server did not answer.' }
+    }
+}
+
+function Switch-RoomRelease($Work, $Tag, $Previous, $Register, $RestoreTasks, [switch]$RecordResult) {
     $server = Join-Path $Support 'server'
     $backup = Join-Path $Work 'previous'
     $staged = Join-Path $Work 'new'
@@ -415,26 +541,19 @@ function Switch-RoomRelease($Work, $Tag, $Previous, $Register, $RestoreTasks) {
         $reason = 'no_answer'
         if (!(Wait-ServerHealth $Tag.Substring(1))) { throw 'New server did not answer.' }
         $reason = 'swap'
+        if ($RecordResult) { Save-UpdateResult $Work $Tag $Previous }
         Write-PrivateText 'installed-release' ($Tag + [char]10)
         return
     } catch {
         try {
-            if ($movedNew) {
-                Stop-RoomServer
-                [IO.Directory]::Move($server, $staged)
-            }
-            if ($movedOld) { [IO.Directory]::Move($backup, $server) }
-            if ($registrationAttempted) { & $RestoreTasks }
-            if ($Previous) {
-                Start-RoomServer
-                if (!(Wait-ServerHealth $Previous.Substring(1))) { throw 'Previous server did not answer.' }
-            }
+            if (!$registrationAttempted) { $RestoreTasks = $null }
+            Restore-RoomRelease $Work $Previous $movedNew $movedOld $RestoreTasks
         } catch { $reason = 'rollback_failed' }
         return $reason
     }
 }
 
-function Save-UpdateResult($Tag, $Previous, $Reason) {
+function Save-UpdateResult($Work, $Tag, $Previous, $Reason) {
     $now = Get-UpdateTime
     $record = @{ run = $now.UtcDateTime.ToString('yyyyMMddTHHmmssZ', [cultureinfo]::InvariantCulture); version = $Tag.Substring(1) }
     if ($Reason) {
@@ -444,7 +563,48 @@ function Save-UpdateResult($Tag, $Previous, $Reason) {
         $record.result = 'updated'
         $record.previous = $Previous.Substring(1)
     }
-    Write-PrivateText 'update-result.json' (($record | ConvertTo-Json -Compress) + [char]10)
+    Write-PrivateText 'pending-result.json' (($record | ConvertTo-Json -Compress) + [char]10) $Work
+}
+
+# The pending record and the previous code survive a sharing error on the public result.
+# Replaying the same bytes preserves the run identifier used for notification deduplication.
+function Publish-StagedResult($Work) {
+    $text = Read-PrivateText 'pending-result.json' 4KB $Work
+    $record = ConvertFrom-Json -InputObject $text
+    if ($record.result -ceq 'updated') {
+        $target = 'v' + $record.version
+        $previous = 'v' + $record.previous
+        $installed = (Read-PrivateText 'installed-release' 200).Trim()
+        if ($installed -cne $target) {
+            # Interrupted after confirming health and staging the record, before committing the marker.
+            if ($installed -cne $previous) { throw 'Unexpected installed release during recovery.' }
+            if (Wait-ServerHealth $record.version) {
+                Write-PrivateText 'installed-release' ($target + [char]10)
+            } else {
+                $failure = 'no_answer'
+                try {
+                    $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
+                    Restore-RoomRelease $Work $previous $backup $backup
+                } catch { $failure = 'rollback_failed' }
+                Save-UpdateResult $Work $target $previous $failure
+                $text = Read-PrivateText 'pending-result.json' 4KB $Work
+            }
+        }
+    }
+    Write-PrivateText 'update-result.json' $text
+    [IO.File]::Delete((Join-Path $Work 'pending-result.json'))
+}
+
+function Complete-StagedResults {
+    foreach ($stage in (Get-ChildItem -LiteralPath $Support -Force -Directory -Filter 'stage-*')) {
+        if ($stage.Name -cnotmatch '\Astage-[0-9a-f]{32}\z') { continue }
+        Assert-PrivatePath $stage.FullName
+        if ([IO.File]::Exists((Join-Path $stage.FullName 'pending-result.json'))) {
+            Publish-StagedResult $stage.FullName
+            $saved = ConvertFrom-Json -InputObject (Read-PrivateText 'update-result.json' 4KB)
+            if ($saved.reason -cne 'rollback_failed') { Remove-CodeDirectory $stage.FullName }
+        }
+    }
 }
 
 function Invoke-RoomUpdate($Root) {
@@ -453,6 +613,7 @@ function Invoke-RoomUpdate($Root) {
     $lock = Get-UpdateLock
     if (!$lock) { return 'busy' }
     try {
+        Complete-StagedResults
         $settings = Get-UpdateSettings
         if (!$settings.Enabled) { return 'off' }
         $installed = ('' + (Read-PrivateText 'installed-release' 200)).TrimEnd([char]10)
@@ -460,7 +621,8 @@ function Invoke-RoomUpdate($Root) {
         $now = Get-UpdateTime
         if (!(Test-UpdateDue $now $settings.Interval)) { return 'not_due' }
         if (Test-JobRunning $Root) { return 'job_running' }
-        Write-PrivateText 'last-check' ($now.ToUnixTimeSeconds().ToString() + [char]10)
+        # Linked, locked or non-file stamps stay untouched. Release discovery is still due.
+        try { Write-PrivateText 'last-check' ($now.ToUnixTimeSeconds().ToString() + [char]10) } catch { }
         [IO.File]::Delete((Join-Path $Support 'first-check'))
         $tag = Get-LatestTag $settings.Channel
         if (!$tag -or (Compare-Tags $tag $installed) -le 0) { return 'current' }
@@ -472,13 +634,15 @@ function Invoke-RoomUpdate($Root) {
             catch [IO.InvalidDataException] { $reason = 'check' }
             if (!$reason) {
                 if (Test-JobRunning $Root) { return 'job_running' }
-                $reason = Switch-RoomRelease $work $tag $installed
+                $reason = Switch-RoomRelease $work $tag $installed -RecordResult
             }
-            Save-UpdateResult $tag $installed $reason
+            if ($reason) { Save-UpdateResult $work $tag $installed $reason }
+            Publish-StagedResult $work
             if ($reason) { return $reason }
             return 'updated'
         } finally {
-            if ($reason -ne 'rollback_failed' -or ![IO.Directory]::Exists((Join-Path $work 'previous'))) {
+            if (![IO.File]::Exists((Join-Path $work 'pending-result.json')) -and
+                ($reason -ne 'rollback_failed' -or ![IO.Directory]::Exists((Join-Path $work 'previous')))) {
                 Remove-CodeDirectory $work
             }
         }
@@ -486,6 +650,7 @@ function Invoke-RoomUpdate($Root) {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
+    if ($FactoryRootBase64) { $UpdateFactoryRoot = $Utf8.GetString([Convert]::FromBase64String($FactoryRootBase64)) }
     if (!$UpdateFactoryRoot) { throw 'Supply -FactoryRoot with the factory directory.' }
     Invoke-RoomUpdate $UpdateFactoryRoot
 }

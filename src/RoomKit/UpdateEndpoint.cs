@@ -101,7 +101,7 @@ internal static class UpdateEndpoint
 
         string command = OperatingSystem.IsWindows()
             ? @".\launch-agent.ps1 install -Release v" + latest.Version
-                + (factoryRoot is null ? "" : " -FactoryRoot '" + factoryRoot.Replace("'", "''", StringComparison.Ordinal) + "'")
+                + (factoryRoot is null ? "" : " -FactoryRoot " + RoomContext.PowerShellLiteral(factoryRoot))
                 + (tailnetHost is null ? "" : " -TailnetHost " + tailnetHost)
             : "scripts/launch-agent.sh install --release v" + latest.Version
                 + (tailnetHost is null ? "" : " --tailnet-host " + tailnetHost);

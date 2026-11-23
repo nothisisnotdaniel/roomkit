@@ -50,14 +50,51 @@ internal static class AccessToken
     /// <summary>Largest token file read (a token plus a line ending fits many times over).</summary>
     public const long MaxBytes = 256;
 
-    public static string CreatedText =>
-        "Created an access token. Show it with: " + RoomContext.RunCommand + " token";
+    public static string CreatedText(string? configured) =>
+        "Created an access token. Show it with " + RoomContext.RunCommand + " token" + TokenFileArgument(configured);
 
-    public static string InvalidText =>
-        "The access token file is not a private file with a valid token. Replace it with: "
-        + RoomContext.RunCommand + " token --new";
+    public static string InvalidText(string? configured) =>
+        FolderRecovery(configured) ?? "Replace the invalid access token file with "
+        + RoomContext.RunCommand + " token --new" + TokenFileArgument(configured);
 
-    public const string WriteFailedText = "Can't write the access token file.";
+    public static string WriteFailedText(string? configured) =>
+        FolderRecovery(configured) ?? "Can't write the access token file.";
+
+    private static string TokenFileArgument(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return "";
+        }
+
+        string path = ResolvePath(configured);
+        string literal = OperatingSystem.IsWindows() ? RoomContext.PowerShellLiteral(path)
+            : "'" + path.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
+        return " --TokenFile " + literal;
+    }
+
+    private static string? FolderRecovery(string? configured)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            DirectoryInfo folder = new FileInfo(ResolvePath(configured)).Directory!;
+            if (folder.Exists || folder.LinkTarget is not null)
+            {
+                try
+                {
+                    using FileStream handle = WindowsPrivateFiles.OpenDirectory(folder);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    return $"Use a real directory for the access token folder '{folder.FullName}'. "
+                        + "In Properties > Security > Advanced, set your account as owner, disable inheritance "
+                        + "and grant access only to your account. Then restart the server.";
+                }
+            }
+        }
+
+        return null;
+    }
 
     public const UnixFileMode FileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
@@ -172,16 +209,17 @@ internal static class AccessToken
             if (OperatingSystem.IsWindows())
             {
                 DirectoryInfo directory = new(folder);
-                if (directory.Exists || directory.LinkTarget is not null)
-                {
-                    WindowsPrivateFiles.Check(directory);
-                }
-                else
+                if (!directory.Exists && directory.LinkTarget is null)
                 {
                     WindowsPrivateFiles.CreateDirectory(directory);
                 }
+
+                using FileStream parent = WindowsPrivateFiles.OpenDirectory(directory);
+                WindowsPrivateFiles.Replace(parent, Path.GetFileName(full), Encoding.ASCII.GetBytes(token + "\n"));
+                return token;
             }
-            else if (!Directory.Exists(folder))
+
+            if (!Directory.Exists(folder))
             {
                 Directory.CreateDirectory(folder, FolderMode);
                 File.SetUnixFileMode(folder, FolderMode);
@@ -194,17 +232,17 @@ internal static class AccessToken
                 stream.Flush(flushToDisk: true);
             }
 
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(temp, FileMode);
-            }
+            File.SetUnixFileMode(temp, FileMode);
 
             File.Move(temp, full, overwrite: true);
             return token;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            TryDelete(temp);
+            if (!OperatingSystem.IsWindows())
+            {
+                TryDelete(temp);
+            }
             return null;
         }
     }

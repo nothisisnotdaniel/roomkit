@@ -98,6 +98,8 @@ Windows apps copy `scripts/launch-agent.ps1` and `scripts/updater.ps1` from the 
 
 Publish the single-file executable, `wwwroot` and both scripts at the root of `<prefix>-<version>-win-x64.zip`. Add one SHA-256 entry for that filename to the release's `SHA256SUMS`. The installer accepts `install -FactoryRoot <path> [-Release <tag>] [-TailnetHost <host>]`, `status` and `uninstall`. A running update checks the scheduled server's PID, listener and health version before advancing the release marker.
 
+The Windows updater reads up to ten pages of 100 releases, with a 1 MiB limit per page. An incomplete release scan or an unreadable job state defers installation. If another process holds the result file open, the updater keeps the outcome and previous code in its private staging folder and retries the write on its next invocation.
+
 ## Feed and versioning
 
 RoomKit has the same version as the ControlRoom release that ships it. The release workflow packs it with

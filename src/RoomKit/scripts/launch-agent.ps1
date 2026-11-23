@@ -17,11 +17,13 @@ function Quote-TaskArgument([string]$Value) {
 
 function Register-RoomTasks($Root, $Tailnet) {
     $server = Join-Path $Support 'server'
-    $serverArgs = '--FactoryRoot ' + (Quote-TaskArgument $Root)
+    # Task Scheduler expands %NAME% even inside quoted Exec arguments.
+    $encodedRoot = [Convert]::ToBase64String($Utf8.GetBytes($Root))
+    $serverArgs = '--FactoryRootBase64 ' + $encodedRoot
     if ($Tailnet) { $serverArgs += ' --TailnetHost ' + (Quote-TaskArgument $Tailnet) }
     $serverAction = New-ScheduledTaskAction -Execute (Join-Path $server $ServerName) -Argument $serverArgs -WorkingDirectory $Support
     $updaterArgs = '-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File ' + (Quote-TaskArgument (Join-Path $server 'updater.ps1')) +
-        ' -FactoryRoot ' + (Quote-TaskArgument $Root)
+        ' -FactoryRootBase64 ' + $encodedRoot
     $shell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
     $updateAction = New-ScheduledTaskAction -Execute $shell -Argument $updaterArgs -WorkingDirectory $Support
     $principal = New-ScheduledTaskPrincipal -UserId $UserSid.Value -LogonType Interactive -RunLevel Limited
@@ -48,6 +50,7 @@ function Install-Room($Root, $Tag, $Tailnet) {
     $lock = Get-UpdateLock
     if (!$lock) { throw 'An installation or update is already running.' }
     try {
+        Complete-StagedResults
         if (!$Tag) { $Tag = Get-LatestTag (Get-UpdateSettings).Channel }
         $work = New-ReleaseWork
         $reason = $null
@@ -88,6 +91,7 @@ function Uninstall-Room {
     $lock = Get-UpdateLock
     if (!$lock) { throw 'An installation or update is already running.' }
     try {
+        Complete-StagedResults
         Stop-RoomServer
         Remove-RoomTask $UpdaterTask
         Remove-RoomTask $ServerTask
