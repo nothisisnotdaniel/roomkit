@@ -51,11 +51,11 @@ internal static class AccessToken
     public const long MaxBytes = 256;
 
     public static string CreatedText =>
-        "Created an access token. Show it with: " + RoomContext.RunCommand + " -- token";
+        "Created an access token. Show it with: " + RoomContext.RunCommand + " token";
 
     public static string InvalidText =>
         "The access token file is not a private file with a valid token. Replace it with: "
-        + RoomContext.RunCommand + " -- token --new";
+        + RoomContext.RunCommand + " token --new";
 
     public const string WriteFailedText = "Can't write the access token file.";
 
@@ -126,6 +126,12 @@ internal static class AccessToken
 
             if (!file.Exists)
             {
+                if (OperatingSystem.IsWindows() && file.Directory is { } folder
+                    && (folder.Exists || folder.LinkTarget is not null))
+                {
+                    WindowsPrivateFiles.Check(folder);
+                }
+
                 return new TokenFileRead(TokenFileState.Missing, null);
             }
 
@@ -134,12 +140,15 @@ internal static class AccessToken
                 return Invalid();
             }
 
-            string? text = SafeFileReader.ReadText(path, MaxBytes);
-            if (text is null)
+            byte[]? bytes = OperatingSystem.IsWindows()
+                ? WindowsPrivateFiles.Read(file, MaxBytes)
+                : SafeFileReader.ReadBytes(path, MaxBytes);
+            if (bytes is null)
             {
                 return Invalid();
             }
 
+            string text = SafeFileReader.Decode(bytes);
             string token = text.EndsWith('\n') ? text[..^1] : text;
             return IsValid(token) ? new TokenFileRead(TokenFileState.Valid, token) : Invalid();
         }
@@ -160,31 +169,25 @@ internal static class AccessToken
         string token = Generate(random);
         try
         {
-            if (!Directory.Exists(folder))
+            if (OperatingSystem.IsWindows())
             {
-                if (OperatingSystem.IsWindows())
+                DirectoryInfo directory = new(folder);
+                if (directory.Exists || directory.LinkTarget is not null)
                 {
-                    Directory.CreateDirectory(folder);
+                    WindowsPrivateFiles.Check(directory);
                 }
                 else
                 {
-                    Directory.CreateDirectory(folder, FolderMode);
-                    File.SetUnixFileMode(folder, FolderMode);
+                    WindowsPrivateFiles.CreateDirectory(directory);
                 }
             }
-
-            FileStreamOptions options = new()
+            else if (!Directory.Exists(folder))
             {
-                Mode = System.IO.FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = FileMode;
+                Directory.CreateDirectory(folder, FolderMode);
+                File.SetUnixFileMode(folder, FolderMode);
             }
 
-            using (FileStream stream = new(temp, options))
+            using (FileStream stream = CreatePrivateFile(temp))
             {
                 byte[] bytes = Encoding.ASCII.GetBytes(token + "\n");
                 stream.Write(bytes);
@@ -229,6 +232,18 @@ internal static class AccessToken
     private static TokenFileRead Invalid()
     {
         return new TokenFileRead(TokenFileState.Invalid, null);
+    }
+
+    internal static FileStream CreatePrivateFile(string path)
+    {
+        return OperatingSystem.IsWindows() ? WindowsPrivateFiles.CreateFile(path) : new FileStream(path,
+            new FileStreamOptions
+            {
+                Mode = System.IO.FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                UnixCreateMode = FileMode,
+            });
     }
 
     private static void TryDelete(string path)

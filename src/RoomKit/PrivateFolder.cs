@@ -68,9 +68,13 @@ internal sealed class PrivateFolder
                 return null;
             }
 
-            if (!OperatingSystem.IsWindows()
-                && ((File.GetUnixFileMode(path) & GroupOrOther) != 0
-                    || (checkFileOwner && (Owner is null || UnixOwner.OwnerOf(path) != Owner))))
+            if (OperatingSystem.IsWindows())
+            {
+                return WindowsPrivateFiles.Read(file, maxBytes) ?? throw new PrivateFileException();
+            }
+
+            if ((File.GetUnixFileMode(path) & GroupOrOther) != 0
+                    || (checkFileOwner && (Owner is null || UnixOwner.OwnerOf(path) != Owner)))
             {
                 throw new PrivateFileException();
             }
@@ -99,18 +103,12 @@ internal sealed class PrivateFolder
                 throw new PrivateFileException();
             }
 
-            FileStreamOptions options = new()
+            if (OperatingSystem.IsWindows() && target.Exists)
             {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = AccessToken.FileMode;
+                WindowsPrivateFiles.Check(target);
             }
 
-            using (FileStream stream = new(temp, options))
+            using (FileStream stream = AccessToken.CreatePrivateFile(temp))
             {
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
@@ -184,7 +182,7 @@ internal sealed class PrivateFolder
 
             if (OperatingSystem.IsWindows())
             {
-                Directory.CreateDirectory(Path);
+                WindowsPrivateFiles.CreateDirectory(folder);
                 return true;
             }
 
@@ -194,6 +192,7 @@ internal sealed class PrivateFolder
 
         if (OperatingSystem.IsWindows())
         {
+            WindowsPrivateFiles.Check(folder);
             return true;
         }
 

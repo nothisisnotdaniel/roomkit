@@ -154,7 +154,7 @@ public static class SafeFileReader
 
     /// <summary>Reads the whole stream when it is at most <paramref name="maxBytes"/> long and does not grow while it
     /// is read; else <c>null</c>.</summary>
-    private static byte[]? ReadCapped(FileStream stream, long maxBytes)
+    internal static byte[]? ReadCapped(FileStream stream, long maxBytes)
     {
         if (stream.Length > maxBytes)
         {

@@ -200,7 +200,7 @@ public static class RoomKitApp
         BacklogChangeEndpoint.Map(app);
         PushEndpoint.Map(app);
         VersionEndpoint.Map(app);
-        UpdateEndpoint.Map(app, tailnetHost);
+        UpdateEndpoint.Map(app, tailnetHost, root);
         HealthEndpoint.Map(app);
         mapApp(new RoomRoutes(app, appPostRoutes));
         postRoutes = KitPostRoutes.Concat(appPostRoutes).ToFrozenSet(StringComparer.Ordinal);

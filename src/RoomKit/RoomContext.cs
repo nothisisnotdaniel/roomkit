@@ -13,8 +13,10 @@ internal static partial class RoomContext
 
     public static IJobFormat Jobs => Current.Jobs;
 
-    /// <summary>The fixed start command in help texts: <c>dotnet run --project src/&lt;short name&gt;.Server</c>.</summary>
-    public static string RunCommand => "dotnet run --project src/" + Options.ShortName + ".Server";
+    /// <summary>The command prefix for the platform's executable or source checkout.</summary>
+    public static string RunCommand => OperatingSystem.IsWindows()
+        ? @".\" + Options.ShortName.ToLowerInvariant() + ".exe"
+        : "dotnet run --project src/" + Options.ShortName + ".Server --";
 
     private static Configured Current =>
         Volatile.Read(ref current) ?? throw new InvalidOperationException("RoomKit is not configured.");

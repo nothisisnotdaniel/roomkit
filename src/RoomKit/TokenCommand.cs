@@ -9,7 +9,7 @@ internal static class TokenCommand
     public const string NewOption = "--new";
 
     public static string UsageText =>
-        "Usage: " + RoomContext.RunCommand + " -- token [--new] [--TokenFile <path>]";
+        "Usage: " + RoomContext.RunCommand + " token [--new] [--TokenFile <path>]";
 
     public static bool IsCommand(string[] args)
     {
