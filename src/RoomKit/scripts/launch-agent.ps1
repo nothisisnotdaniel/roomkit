@@ -13,30 +13,37 @@ function Invoke-InstalledTask($Config) {
     $Support = $Config.Support
     $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
     $held = [Collections.Generic.Stack[IDisposable]]::new()
+    $lock = $null
     try {
-        $held.Push((Open-PrivateCodeEntry $Support -Directory))
-        Set-Location -LiteralPath $Support
-        $server = Join-Path $Support 'server'
-        if ($Config.Updater -and ((Get-PendingStages) -or ![IO.Directory]::Exists($server))) {
-            $entry = Join-Path $Support 'recovery-updater.ps1'
-        } else {
-            $held.Push((Open-PrivateCodeEntry $server -Directory))
-            $entry = Join-Path $server $Config.Name
-        }
-        if ($Config.Updater) {
-            $held.Push((Open-PrivateCodeEntry $entry -Limit $Config.Limit))
-            # PowerShell loads the verified script while its file and directories are pinned.
-            # Release the handles before invoking its update, which may rename those directories.
-            . $entry
-        } else {
-            $held.Push((Open-PrivateCodeEntry $entry))
-            $arguments = @('--FactoryRootBase64', $Config.Root64)
-            if ($Config.Tailnet) { $arguments += '--TailnetHost', $Config.Tailnet }
-            $process = Start-Process -FilePath $entry -ArgumentList $arguments -WorkingDirectory $Support -WindowStyle Hidden -Wait -PassThru
-            exit $process.ExitCode
-        }
-    } finally { while ($held.Count) { $held.Pop().Dispose() } }
-    Invoke-RoomUpdate ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Config.Root64)))
+        try {
+            $held.Push((Open-PrivateCodeEntry $Support -Directory))
+            if ($Config.Updater) {
+                $lock = Get-UpdateLock
+                if (!$lock) { return 'busy' }
+            }
+            Set-Location -LiteralPath $Support
+            $server = Join-Path $Support 'server'
+            if ($Config.Updater -and ((Get-PendingStages) -or ![IO.Directory]::Exists($server))) {
+                $entry = Join-Path $Support 'recovery-updater.ps1'
+            } else {
+                $held.Push((Open-PrivateCodeEntry $server -Directory))
+                $entry = Join-Path $server $Config.Name
+            }
+            if ($Config.Updater) {
+                $held.Push((Open-PrivateCodeEntry $entry -Limit $Config.Limit))
+                . $entry
+                $Support = $Config.Support
+            } else {
+                $held.Push((Open-PrivateCodeEntry $entry))
+                $arguments = @('--FactoryRootBase64', $Config.Root64)
+                if ($Config.Tailnet) { $arguments += '--TailnetHost', $Config.Tailnet }
+                $process = Start-Process -FilePath $entry -ArgumentList $arguments -WorkingDirectory $Support -WindowStyle Hidden -Wait -PassThru
+                exit $process.ExitCode
+            }
+        } finally { while ($held.Count) { $held.Pop().Dispose() } }
+        # Release the code handles for renames and atomic file replacement. Keep the lock through both.
+        Invoke-LockedRoomUpdate ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Config.Root64)))
+    } finally { if ($lock) { $lock.Dispose() } }
 }
 
 function New-RoomAction($Root, $Tailnet, [switch]$Updater) {
@@ -47,9 +54,11 @@ function New-RoomAction($Root, $Tailnet, [switch]$Updater) {
     }
     $data = [Convert]::ToBase64String($Utf8.GetBytes(($config | ConvertTo-Json -Compress)))
     # Register the checks themselves in the action. No installed script executes before its checks.
+    $functions = 'Initialize-FileReader','Assert-PrivateAcl','Open-PrivateCodeEntry','Get-PendingStages','Invoke-InstalledTask'
+    if ($Updater) { $functions += 'Assert-PrivatePath','New-PrivateFile','Get-UpdateLock' }
     $script = @(
         '$ErrorActionPreference = ''Stop'''
-        foreach ($name in 'Initialize-FileReader','Assert-PrivateAcl','Open-PrivateCodeEntry','Get-PendingStages','Invoke-InstalledTask') {
+        foreach ($name in $functions) {
             (Get-Command -Name $name -CommandType Function).ScriptBlock.Ast.Extent.Text
         }
         "Invoke-InstalledTask ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$data')) | ConvertFrom-Json)"

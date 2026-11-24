@@ -829,42 +829,44 @@ function Invoke-RoomUpdate($Root) {
     Assert-PrivatePath $Support
     $lock = Get-UpdateLock
     if (!$lock) { return 'busy' }
-    try {
-        $settings = Get-UpdateSettings
-        if (!$settings.Enabled) { return 'off' }
-        $installed = ('' + (Read-PrivateText 'installed-release' 200)).TrimEnd([char]10)
-        if ($installed.Length -gt 129 -or $installed -cnotmatch $TagPattern) { return 'not_release' }
-        $now = Get-UpdateTime
-        if (!(Test-UpdateDue $now $settings.Interval)) { return 'not_due' }
-        if (Test-JobRunning $Root) { return 'job_running' }
-        $recovered = Complete-StagedResults
-        if ($recovered) { return $recovered }
-        # Linked, locked or non-file stamps stay untouched. Release discovery is still due.
-        try { Write-PrivateText 'last-check' ($now.ToUnixTimeSeconds().ToString() + [char]10) } catch { }
-        [IO.File]::Delete((Join-Path $Support 'first-check'))
-        $tag = Get-LatestTag $settings.Channel
-        if (!$tag -or (Compare-Tags $tag $installed) -le 0) { return 'current' }
+    try { Invoke-LockedRoomUpdate $Root } finally { $lock.Dispose() }
+}
 
-        $work = New-ReleaseWork
-        $reason = $null
-        try {
-            try { Get-ReleaseFiles $tag $work }
-            catch [IO.InvalidDataException] { $reason = 'check' }
-            if (!$reason) {
-                if (Test-JobRunning $Root) { return 'job_running' }
-                $reason = Switch-RoomRelease $work $tag $installed -RecordResult
-            }
-            if ($reason) { Save-UpdateResult $work $tag $installed $reason }
-            $reason = Publish-StagedResult $work
-            if ($reason) { return $reason }
-            return 'updated'
-        } finally {
-            if (![IO.File]::Exists((Join-Path $work 'pending-swap')) -and ![IO.File]::Exists((Join-Path $work 'pending-result.json')) -and
-                ($reason -ne 'rollback_failed' -or ![IO.Directory]::Exists((Join-Path $work 'previous')))) {
-                Remove-CodeDirectory $work
-            }
+function Invoke-LockedRoomUpdate($Root) {
+    $settings = Get-UpdateSettings
+    if (!$settings.Enabled) { return 'off' }
+    $installed = ('' + (Read-PrivateText 'installed-release' 200)).TrimEnd([char]10)
+    if ($installed.Length -gt 129 -or $installed -cnotmatch $TagPattern) { return 'not_release' }
+    $now = Get-UpdateTime
+    if (!(Test-UpdateDue $now $settings.Interval)) { return 'not_due' }
+    if (Test-JobRunning $Root) { return 'job_running' }
+    $recovered = Complete-StagedResults
+    if ($recovered) { return $recovered }
+    # Linked, locked or non-file stamps stay untouched. Release discovery is still due.
+    try { Write-PrivateText 'last-check' ($now.ToUnixTimeSeconds().ToString() + [char]10) } catch { }
+    [IO.File]::Delete((Join-Path $Support 'first-check'))
+    $tag = Get-LatestTag $settings.Channel
+    if (!$tag -or (Compare-Tags $tag $installed) -le 0) { return 'current' }
+
+    $work = New-ReleaseWork
+    $reason = $null
+    try {
+        try { Get-ReleaseFiles $tag $work }
+        catch [IO.InvalidDataException] { $reason = 'check' }
+        if (!$reason) {
+            if (Test-JobRunning $Root) { return 'job_running' }
+            $reason = Switch-RoomRelease $work $tag $installed -RecordResult
         }
-    } finally { $lock.Dispose() }
+        if ($reason) { Save-UpdateResult $work $tag $installed $reason }
+        $reason = Publish-StagedResult $work
+        if ($reason) { return $reason }
+        return 'updated'
+    } finally {
+        if (![IO.File]::Exists((Join-Path $work 'pending-swap')) -and ![IO.File]::Exists((Join-Path $work 'pending-result.json')) -and
+            ($reason -ne 'rollback_failed' -or ![IO.Directory]::Exists((Join-Path $work 'previous')))) {
+            Remove-CodeDirectory $work
+        }
+    }
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
