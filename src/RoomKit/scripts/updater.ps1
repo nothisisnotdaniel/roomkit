@@ -46,11 +46,14 @@ function Assert-PrivateAcl($Acl) {
     }
 }
 
-# Keep the no-follow handle open through copying or loading code. Its sharing mode
-# prevents the checked entry from being written, renamed or replaced in that interval.
-function Open-PrivateCodeEntry($Path, [switch]$Directory, [long]$Limit = [long]::MaxValue) {
+# Keep each checked entry pinned against rename or replacement, and code files against writes.
+function Open-PrivateCodeEntry($Path, [switch]$Directory, [long]$Limit = [long]::MaxValue, [switch]$ShareDirectoryWrites) {
     Initialize-FileReader
-    $handle = [RoomKit.UpdateEntry]::Open($Path, $Directory.IsPresent)
+    $handle = if ($Directory -and $ShareDirectoryWrites) {
+        [RoomKit.UpdateEntry]::OpenDataDirectory($Path)
+    } else {
+        [RoomKit.UpdateEntry]::Open($Path, $Directory.IsPresent)
+    }
     if (!$handle) { throw 'Missing installed code.' }
     try {
         $stream = [IO.FileStream]::new($handle, [IO.FileAccess]::Read)
@@ -262,8 +265,17 @@ namespace RoomKit {
         private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder path, uint size, uint flags);
 
         public static SafeFileHandle Open(string path, bool directory) {
-            // OPEN_REPARSE_POINT | BACKUP_SEMANTICS. Deny write/delete sharing until children have been read.
-            SafeFileHandle handle = CreateFile(path, 0x80000000, FileShare.Read, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+            return Open(path, directory, FileShare.Read);
+        }
+
+        public static SafeFileHandle OpenDataDirectory(string path) {
+            // Child renames need write sharing on the destination directory. Keep delete sharing denied.
+            return Open(path, true, FileShare.ReadWrite);
+        }
+
+        private static SafeFileHandle Open(string path, bool directory, FileShare share) {
+            // OPEN_REPARSE_POINT | BACKUP_SEMANTICS
+            SafeFileHandle handle = CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
             if (handle.IsInvalid) {
                 int error = Marshal.GetLastWin32Error();
                 handle.Dispose();
