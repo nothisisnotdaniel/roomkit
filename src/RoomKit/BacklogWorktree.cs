@@ -141,23 +141,24 @@ public sealed class BacklogWorktree
     /// on a worktree at exactly <paramref name="path"/>.</summary>
     private static async Task<bool> IsRegistered(ProjectFolder project, string path)
     {
-        GitResult list = await ProjectGit.Run(project.Path, ["worktree", "list", "--porcelain"], ProjectGit.Timeout);
+        GitResult list = await ProjectGit.Run(project.Path, ["worktree", "list", "--porcelain", "-z"], ProjectGit.Timeout);
         if (!list.Ok)
         {
             return false;
         }
 
         string? current = null;
-        foreach (string raw in list.Output.Split('\n'))
+        foreach (string line in list.Output.Split('\0'))
         {
-            string line = raw.TrimEnd('\r');
             if (line.StartsWith("worktree ", StringComparison.Ordinal))
             {
                 current = line["worktree ".Length..];
             }
             else if (line == "branch " + BranchRef)
             {
-                return string.Equals(current, path, StringComparison.Ordinal);
+                return OperatingSystem.IsWindows()
+                    ? string.Equals(current?.Replace('/', '\\'), path, StringComparison.OrdinalIgnoreCase)
+                    : string.Equals(current, path, StringComparison.Ordinal);
             }
         }
 

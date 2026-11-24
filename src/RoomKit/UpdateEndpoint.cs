@@ -28,11 +28,9 @@ internal static class UpdateEndpoint
 
     public const string SettingsRoute = "/api/update/settings";
 
-    public const string CommandPrefix = "scripts/launch-agent.sh install --release v";
-
     public const string StoreError = "settings_store";
 
-    public static void Map(WebApplication app, string? tailnetHost)
+    public static void Map(WebApplication app, string? tailnetHost, string factoryRoot)
     {
         app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (
             UpdateState state, RunningVersion running, UpdateSettingsStore settings, HttpContext context) =>
@@ -50,7 +48,7 @@ internal static class UpdateEndpoint
 
             // A refused file checks on stable (UpdateChecker.Channel), so only a stable result is shown then.
             string channel = stored?.Channel ?? UpdateChannel.Stable;
-            return Results.Json(Describe(state.Latest, running.Value, tailnetHost, channel)
+            return Results.Json(Describe(state.Latest, running.Value, tailnetHost, channel, factoryRoot)
                 with { AutoUpdate = stored?.AutoUpdate, Channel = stored?.Channel, UpdateInterval = stored?.UpdateInterval });
         });
 
@@ -92,7 +90,8 @@ internal static class UpdateEndpoint
     /// <summary>The response for <paramref name="latest"/>: <c>available</c> only when it was found on
     /// <paramref name="channel"/> and is newer than <paramref name="current"/> by SemVer precedence.</summary>
     public static UpdateResponse Describe(
-        UpdateRelease? latest, string current, string? tailnetHost, string channel = UpdateChannel.Stable)
+        UpdateRelease? latest, string current, string? tailnetHost, string channel = UpdateChannel.Stable,
+        string? factoryRoot = null)
     {
         SemVer? running = SemVer.Parse(current);
         if (latest is null || running is null || latest.Channel != channel || !latest.Version.IsNewerThan(running))
@@ -100,7 +99,12 @@ internal static class UpdateEndpoint
             return new UpdateResponse(current, false, null, null, null);
         }
 
-        string command = CommandPrefix + latest.Version + (tailnetHost is null ? "" : " --tailnet-host " + tailnetHost);
+        string command = OperatingSystem.IsWindows()
+            ? @".\launch-agent.ps1 install -Release v" + latest.Version
+                + (factoryRoot is null ? "" : " -FactoryRoot " + RoomContext.PowerShellLiteral(factoryRoot))
+                + (tailnetHost is null ? "" : " -TailnetHost " + tailnetHost)
+            : "scripts/launch-agent.sh install --release v" + latest.Version
+                + (tailnetHost is null ? "" : " --tailnet-host " + tailnetHost);
         return new UpdateResponse(current, true, latest.Version.ToString(), latest.Url, command);
     }
 

@@ -103,7 +103,7 @@ public sealed class SampleRoomTests : IDisposable
         int code = VersionCommand.Run(["version"], output, error);
 
         Assert.Equal(0, code);
-        Assert.Equal("SampleRoom " + SampleRoom.Version + Environment.NewLine, output.ToString());
+        Assert.Equal("SampleRoom " + SampleRoom.Version + "\n", output.ToString());
         Assert.Equal("", error.ToString());
     }
 

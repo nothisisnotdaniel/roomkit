@@ -52,6 +52,12 @@ internal sealed class PrivateFolder
         string path = System.IO.Path.Combine(Path, name);
         try
         {
+            if (OperatingSystem.IsWindows())
+            {
+                using FileStream directory = WindowsPrivateFiles.OpenDirectory(new DirectoryInfo(Path), createFolder);
+                return WindowsPrivateFiles.Read(directory, name, maxBytes) ?? throw new PrivateFileException();
+            }
+
             if (!CheckFolder(createFolder))
             {
                 return null;
@@ -68,14 +74,17 @@ internal sealed class PrivateFolder
                 return null;
             }
 
-            if (!OperatingSystem.IsWindows()
-                && ((File.GetUnixFileMode(path) & GroupOrOther) != 0
-                    || (checkFileOwner && (Owner is null || UnixOwner.OwnerOf(path) != Owner))))
+            if ((File.GetUnixFileMode(path) & GroupOrOther) != 0
+                    || (checkFileOwner && (Owner is null || UnixOwner.OwnerOf(path) != Owner)))
             {
                 throw new PrivateFileException();
             }
 
             return SafeFileReader.ReadBytes(path, maxBytes) ?? throw new PrivateFileException();
+        }
+        catch (FileNotFoundException) when (OperatingSystem.IsWindows())
+        {
+            return null;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -87,6 +96,20 @@ internal sealed class PrivateFolder
     /// (re-checked first, so a symlink or loose-mode file that appeared is still refused).</summary>
     public void Write(string name, byte[] bytes)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                using FileStream directory = WindowsPrivateFiles.OpenDirectory(new DirectoryInfo(Path), create: true);
+                WindowsPrivateFiles.WritePrivateChild(directory, name, bytes);
+                return;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new PrivateFileException("private file unwritable", exception);
+            }
+        }
+
         string path = System.IO.Path.Combine(Path, name);
         string temp = System.IO.Path.Combine(Path, "." + name + "-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
@@ -94,33 +117,18 @@ internal sealed class PrivateFolder
             CheckFolder(create: true);
             FileInfo target = new(path);
             if (target.LinkTarget is not null || Directory.Exists(path)
-                || (target.Exists && !OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & GroupOrOther) != 0))
+                || (target.Exists && (File.GetUnixFileMode(path) & GroupOrOther) != 0))
             {
                 throw new PrivateFileException();
             }
 
-            FileStreamOptions options = new()
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = AccessToken.FileMode;
-            }
-
-            using (FileStream stream = new(temp, options))
+            using (FileStream stream = AccessToken.CreatePrivateFile(temp))
             {
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
             }
 
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(temp, AccessToken.FileMode);
-            }
-
+            File.SetUnixFileMode(temp, AccessToken.FileMode);
             File.Move(temp, path, overwrite: true);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -184,7 +192,7 @@ internal sealed class PrivateFolder
 
             if (OperatingSystem.IsWindows())
             {
-                Directory.CreateDirectory(Path);
+                WindowsPrivateFiles.CreateDirectory(folder);
                 return true;
             }
 
@@ -194,6 +202,7 @@ internal sealed class PrivateFolder
 
         if (OperatingSystem.IsWindows())
         {
+            WindowsPrivateFiles.Check(folder);
             return true;
         }
 

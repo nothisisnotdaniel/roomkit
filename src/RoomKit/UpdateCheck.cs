@@ -11,6 +11,8 @@ internal sealed partial class SemVer : IComparable<SemVer>
     /// <summary>Longer input is refused before the pattern runs.</summary>
     public const int MaxLength = 128;
 
+    internal const string PrereleaseIdentifierPattern = "(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)";
+
     private readonly string[] numbers;
 
     private readonly string[] prerelease;
@@ -130,7 +132,7 @@ internal sealed partial class SemVer : IComparable<SemVer>
 
     [GeneratedRegex(
         "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"
-        + "(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?\\z",
+        + "(?:-(" + PrereleaseIdentifierPattern + "(?:\\." + PrereleaseIdentifierPattern + ")*))?\\z",
         RegexOptions.CultureInvariant)]
     private static partial Regex Pattern();
 }

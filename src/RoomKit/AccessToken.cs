@@ -50,14 +50,56 @@ internal static class AccessToken
     /// <summary>Largest token file read (a token plus a line ending fits many times over).</summary>
     public const long MaxBytes = 256;
 
-    public static string CreatedText =>
-        "Created an access token. Show it with: " + RoomContext.RunCommand + " -- token";
+    public static string CreatedText(string? configured) =>
+        "Created an access token. Show it with " + RoomContext.RunCommand + " token" + TokenFileArgument(configured);
 
-    public static string InvalidText =>
-        "The access token file is not a private file with a valid token. Replace it with: "
-        + RoomContext.RunCommand + " -- token --new";
+    public static string InvalidText(string? configured) =>
+        FolderRecovery(configured) ?? "Replace the invalid access token file with "
+        + RoomContext.RunCommand + " token --new" + TokenFileArgument(configured);
 
-    public const string WriteFailedText = "Can't write the access token file.";
+    public static string WriteFailedText(string? configured) =>
+        FolderRecovery(configured) ?? "Can't write the access token file.";
+
+    private static string TokenFileArgument(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return "";
+        }
+
+        string path = ResolvePath(configured);
+        string literal = OperatingSystem.IsWindows() ? RoomContext.PowerShellLiteral(path)
+            : "'" + path.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
+        return " --TokenFile " + literal;
+    }
+
+    private static string? FolderRecovery(string? configured)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            DirectoryInfo? folder = new FileInfo(ResolvePath(configured)).Directory;
+            if (folder is null)
+            {
+                return "Set --TokenFile to a file inside a private directory.";
+            }
+
+            if (folder.Exists || folder.LinkTarget is not null || File.Exists(folder.FullName))
+            {
+                try
+                {
+                    using FileStream handle = WindowsPrivateFiles.OpenDirectory(folder);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    return $"Use a real directory for the access token folder '{folder.FullName}'. "
+                        + "In Properties > Security > Advanced, set your account as owner, disable inheritance "
+                        + "and grant access only to your account. Then restart the server.";
+                }
+            }
+        }
+
+        return null;
+    }
 
     public const UnixFileMode FileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
@@ -119,29 +161,44 @@ internal static class AccessToken
         try
         {
             FileInfo file = new(path);
-            if (file.LinkTarget is not null || Directory.Exists(path))
+            byte[]? bytes;
+            if (OperatingSystem.IsWindows())
+            {
+                // Determine absence, permissions and contents through the same verified parent.
+                bytes = WindowsPrivateFiles.Read(file, MaxBytes);
+            }
+            else
+            {
+                if (file.LinkTarget is not null || Directory.Exists(path))
+                {
+                    return Invalid();
+                }
+
+                if (!file.Exists)
+                {
+                    return new TokenFileRead(TokenFileState.Missing, null);
+                }
+
+                if ((File.GetUnixFileMode(path) & GroupOrOther) != 0)
+                {
+                    return Invalid();
+                }
+
+                bytes = SafeFileReader.ReadBytes(path, MaxBytes);
+            }
+
+            if (bytes is null)
             {
                 return Invalid();
             }
 
-            if (!file.Exists)
-            {
-                return new TokenFileRead(TokenFileState.Missing, null);
-            }
-
-            if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & GroupOrOther) != 0)
-            {
-                return Invalid();
-            }
-
-            string? text = SafeFileReader.ReadText(path, MaxBytes);
-            if (text is null)
-            {
-                return Invalid();
-            }
-
+            string text = SafeFileReader.Decode(bytes);
             string token = text.EndsWith('\n') ? text[..^1] : text;
             return IsValid(token) ? new TokenFileRead(TokenFileState.Valid, token) : Invalid();
+        }
+        catch (FileNotFoundException) when (OperatingSystem.IsWindows())
+        {
+            return new TokenFileRead(TokenFileState.Missing, null);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -155,53 +212,58 @@ internal static class AccessToken
     public static string? Replace(string path, RandomFill random)
     {
         string full = Path.GetFullPath(path);
-        string folder = Path.GetDirectoryName(full)!;
+        string? folder = Path.GetDirectoryName(full);
+        if (folder is null)
+        {
+            return null;
+        }
+
         string temp = Path.Combine(folder, "." + FileName + "-" + Guid.NewGuid().ToString("N") + ".tmp");
-        string token = Generate(random);
         try
         {
+            if (OperatingSystem.IsWindows())
+            {
+                DirectoryInfo directory = new(folder);
+                if (!directory.Exists && directory.LinkTarget is null)
+                {
+                    WindowsPrivateFiles.CreateDirectory(directory);
+                }
+
+                using FileStream parent = WindowsPrivateFiles.OpenDirectory(directory);
+                string? replacement = null;
+                WindowsPrivateFiles.Replace(parent, Path.GetFileName(full), stream =>
+                {
+                    replacement = Generate(random);
+                    stream.Write(Encoding.ASCII.GetBytes(replacement + "\n"));
+                });
+                return replacement;
+            }
+
             if (!Directory.Exists(folder))
             {
-                if (OperatingSystem.IsWindows())
-                {
-                    Directory.CreateDirectory(folder);
-                }
-                else
-                {
-                    Directory.CreateDirectory(folder, FolderMode);
-                    File.SetUnixFileMode(folder, FolderMode);
-                }
+                Directory.CreateDirectory(folder, FolderMode);
+                File.SetUnixFileMode(folder, FolderMode);
             }
 
-            FileStreamOptions options = new()
-            {
-                Mode = System.IO.FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = FileMode;
-            }
-
-            using (FileStream stream = new(temp, options))
+            string token = Generate(random);
+            using (FileStream stream = CreatePrivateFile(temp))
             {
                 byte[] bytes = Encoding.ASCII.GetBytes(token + "\n");
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
             }
 
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(temp, FileMode);
-            }
+            File.SetUnixFileMode(temp, FileMode);
 
             File.Move(temp, full, overwrite: true);
             return token;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            TryDelete(temp);
+            if (!OperatingSystem.IsWindows())
+            {
+                TryDelete(temp);
+            }
             return null;
         }
     }
@@ -229,6 +291,18 @@ internal static class AccessToken
     private static TokenFileRead Invalid()
     {
         return new TokenFileRead(TokenFileState.Invalid, null);
+    }
+
+    internal static FileStream CreatePrivateFile(string path)
+    {
+        return OperatingSystem.IsWindows() ? WindowsPrivateFiles.CreateFile(path) : new FileStream(path,
+            new FileStreamOptions
+            {
+                Mode = System.IO.FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                UnixCreateMode = FileMode,
+            });
     }
 
     private static void TryDelete(string path)

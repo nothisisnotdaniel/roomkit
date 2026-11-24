@@ -16,8 +16,8 @@ endpoints, and one small `room.js`. RoomKit does the rest.
   tasks, push (subscribe, test, the job watcher), the update check and its settings, `/health` and `/api/version`.
 - **Web app shell:** `app.css`, the service worker `sw.js`, `token.js`, `push.js`, `edit.js`, `counts.js`,
   `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`.
-- **Scripts:** `scripts/launch-agent.sh` (installs the macOS launch agent) and `scripts/updater.sh` (the
-  updater it starts).
+- **Scripts:** `scripts/launch-agent.sh` and `scripts/updater.sh` install and update macOS launch agents.
+  `scripts/launch-agent.ps1` and `scripts/updater.ps1` install and update per-user Windows tasks.
 
 The public types are few. Most of the code is `internal`. The public ones are:
 
@@ -94,6 +94,12 @@ variable assignments: `APP_NAME`, `LABEL`, `UPDATER_LABEL`, `SUPPORT_FOLDER`, `L
 `RELEASES`, `APP_PORT`, `TARBALL_PREFIX`, `SERVER_NAME` and `SOLUTION_FILE`. Everything outside the block stays
 byte-identical to RoomKit's copy, so a newer RoomKit's scripts can be taken over by keeping the block.
 
+Windows apps copy `scripts/launch-agent.ps1` and `scripts/updater.ps1` from the same package. Keep them together. The installer uses the updater's verification, task and swap functions. Set the assignments between `# roomkit:app-begin` and `# roomkit:app-end` in the updater to the app's data folder, task prefix, executable, ZIP prefix, port, GitHub repository and relative job paths. Job files carry a JSON `stage` field. Each account gets its own tasks and data under `%LOCALAPPDATA%`.
+
+Publish the single-file executable, `wwwroot` and both scripts at the root of `<prefix>-<version>-win-x64.zip`. Add one SHA-256 entry for that filename to the release's `SHA256SUMS`. The installer accepts `install -FactoryRoot <path> [-Release <tag>] [-TailnetHost <host>]`, `status` and `uninstall`. A running update checks the scheduled server's PID, listener and health version before advancing the release marker.
+
+The Windows updater reads up to ten pages of 100 releases, with a 1 MiB limit per page. An incomplete release scan or an unreadable job state defers installation. Before stopping the server, the updater saves the previous and target versions in its private staging folder. Its scheduled task can use a recovery copy while the server directory is being replaced. If a swap is interrupted or the result file is held open, recovery resumes on the next enabled, due invocation with the update lock and no active job. Uninstall removes the installed code, recovery copy and staging folders and preserves the token and settings.
+
 ## Feed and versioning
 
 RoomKit has the same version as the ControlRoom release that ships it. The release workflow packs it with
@@ -150,7 +156,7 @@ would need `packages: write`. The release asset needs no new secret or permissio
 3. `Program.cs`: `return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Jobs, MyRoomApp.Map);`
 4. Add `wwwroot/index.html`, `manifest.webmanifest`, the icons, the app's scripts and `room.js` (see Web assets
    and tabs).
-5. Copy the two scripts and fill in their block (see Scripts).
+5. Copy the scripts for each supported platform and set the app assignments described under Scripts.
 
 `RoomRoutes.MapPost` takes only a fixed path under `/api/`, so the token gate always covers an app's `POST` route.
 A `GET` route goes through `RoomRoutes.App`. Every request has already passed the `Host` check, the method rule

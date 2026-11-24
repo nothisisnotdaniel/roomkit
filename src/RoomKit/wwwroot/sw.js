@@ -72,7 +72,7 @@ const UpdateFailedBodies = {
   no_answer: "The new version didn't start, so the old one is back.",
   swap: "The new version couldn't be put in place, so the old one is back.",
   bootstrap_failed: "The new version couldn't be started, so the old one is back.",
-  rollback_failed: "The old version didn't come back. Check the Mac.",
+  rollback_failed: "The old version didn't restart. Check the computer running the server.",
 };
 const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
 const PushVersionPattern = /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z-]{1,40}(\.[0-9A-Za-z-]{1,40}){0,9})?$/;

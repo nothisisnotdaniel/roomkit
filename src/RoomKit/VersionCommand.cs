@@ -6,7 +6,7 @@ internal static class VersionCommand
 {
     public const string Name = "version";
 
-    public static string UsageText => "Usage: " + RoomContext.RunCommand + " -- version";
+    public static string UsageText => "Usage: " + RoomContext.RunCommand + " version";
 
     public static bool IsCommand(string[] args)
     {

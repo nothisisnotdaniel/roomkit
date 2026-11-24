@@ -15,7 +15,7 @@ public sealed class RoomKitLibraryTests
     [Fact]
     public void Sources_HoldNoControlRoomValue()
     {
-        string kit = Path.Combine(SampleRoomTests.RepoFolder(), "src", "RoomKit");
+        string kit = Path.Combine(RepoCopy.RepoFolder(), "src", "RoomKit");
         string[] files = [.. new[] { "*.cs", "*.js", "*.css", "*.html" }
             .SelectMany(pattern => Directory.GetFiles(kit, pattern, SearchOption.AllDirectories))
             .Where(file => !IsBuildOutput(kit, file))];
@@ -38,7 +38,7 @@ public sealed class RoomKitLibraryTests
     public void Project_ReferencesNoAppAndFriendsOnlyTheTwoTestAssemblies()
     {
         string project = File.ReadAllText(
-            Path.Combine(SampleRoomTests.RepoFolder(), "src", "RoomKit", "RoomKit.csproj"));
+            Path.Combine(RepoCopy.RepoFolder(), "src", "RoomKit", "RoomKit.csproj"));
         XDocument xml = XDocument.Parse(project);
 
         Assert.Empty(xml.Descendants("ProjectReference"));
@@ -58,7 +58,7 @@ public sealed class RoomKitLibraryTests
     [Fact]
     public void Docs_HaveTheSectionsAndNameEveryPublicType()
     {
-        string docs = File.ReadAllText(Path.Combine(SampleRoomTests.RepoFolder(), "docs", "roomkit.md"));
+        string docs = File.ReadAllText(Path.Combine(RepoCopy.RepoFolder(), "docs", "roomkit.md"));
         string[] sections =
         [
             "What is in it", "Options", "Job format", "Web assets and tabs", "Scripts", "Feed and versioning",
@@ -113,6 +113,23 @@ public sealed class RoomKitLibraryTests
         Assert.Contains("docs/roomkit.md", entries);
         Assert.Contains("scripts/launch-agent.sh", entries);
         Assert.Contains("scripts/updater.sh", entries);
+        string scripts = Path.Combine(copy.Path, "packed-scripts");
+        Directory.CreateDirectory(scripts);
+        foreach (string name in new[] { "launch-agent.ps1", "updater.ps1" })
+        {
+            ZipArchiveEntry entry = Assert.Single(zip.Entries, item => item.FullName == "scripts/" + name);
+            string path = Path.Combine(scripts, name);
+            entry.ExtractToFile(path);
+            Assert.Equal(File.ReadAllBytes(Path.Combine(copy.Path, "src", "RoomKit", "scripts", name)), File.ReadAllBytes(path));
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsReleaseFixture.Run(copy.Path, scripts, "sample", new FakeTime());
+            using TempTokenFolder reinstall = new();
+            WindowsReleaseFixture.Run(reinstall.Path, scripts, "concurrent-install", new FakeTime());
+        }
+
         string kit = Path.Combine(copy.Path, "src", "RoomKit", "wwwroot");
         foreach (string file in Directory.GetFiles(kit, "*", SearchOption.AllDirectories))
         {

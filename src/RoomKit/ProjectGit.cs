@@ -251,6 +251,7 @@ public static partial class ProjectGit
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             RedirectStandardError = true,
             CreateNoWindow = true,
         };

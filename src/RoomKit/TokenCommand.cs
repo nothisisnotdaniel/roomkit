@@ -9,7 +9,7 @@ internal static class TokenCommand
     public const string NewOption = "--new";
 
     public static string UsageText =>
-        "Usage: " + RoomContext.RunCommand + " -- token [--new] [--TokenFile <path>]";
+        "Usage: " + RoomContext.RunCommand + " token [--new] [--TokenFile <path>]";
 
     public static bool IsCommand(string[] args)
     {
@@ -59,7 +59,7 @@ internal static class TokenCommand
             TokenFileRead read = AccessToken.Read(path);
             if (read.State == TokenFileState.Invalid)
             {
-                error.WriteLine(AccessToken.InvalidText);
+                error.WriteLine(AccessToken.InvalidText(configured));
                 return 1;
             }
 
@@ -68,7 +68,7 @@ internal static class TokenCommand
 
         if (token is null)
         {
-            error.WriteLine(AccessToken.WriteFailedText);
+            error.WriteLine(AccessToken.WriteFailedText(configured));
             return 1;
         }
 
