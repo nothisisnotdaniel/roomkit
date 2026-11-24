@@ -126,6 +126,8 @@ public sealed class RoomKitLibraryTests
         if (OperatingSystem.IsWindows())
         {
             WindowsReleaseFixture.Run(copy.Path, scripts, "sample", new FakeTime());
+            using TempTokenFolder reinstall = new();
+            WindowsReleaseFixture.Run(reinstall.Path, scripts, "concurrent-install", new FakeTime());
         }
 
         string kit = Path.Combine(copy.Path, "src", "RoomKit", "wwwroot");

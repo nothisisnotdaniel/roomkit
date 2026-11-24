@@ -16,8 +16,8 @@ function Invoke-InstalledTask($Config) {
     $lock = $null
     try {
         try {
-            # The running server pins the data directory while the installer publishes installed-release in it.
-            $held.Push((Open-PrivateCodeEntry $Support -Directory -ShareDirectoryWrites:(!$Config.Updater)))
+            # Pin the support directory while allowing the lock holder to rename entries and publish markers.
+            $held.Push((Open-PrivateCodeEntry $Support -Directory -ShareDirectoryWrites))
             if ($Config.Updater) {
                 $lock = Get-UpdateLock
                 if (!$lock) { return 'busy' }
