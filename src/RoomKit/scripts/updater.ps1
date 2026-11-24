@@ -17,7 +17,8 @@ $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
 $Support = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) $DataFolder
 $ServerTask = "$TaskPrefix-server-$($UserSid.Value)"
 $UpdaterTask = "$TaskPrefix-updater-$($UserSid.Value)"
-$identifier = '(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+# Only digits can precede the first letter or hyphen in a nonnumeric SemVer identifier.
+$identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
 $TagPattern = "\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-($identifier(?:\.$identifier)*))?\z"
 $Utf8 = [Text.UTF8Encoding]::new($false, $true)
 $UpdaterLimit = 256KB
