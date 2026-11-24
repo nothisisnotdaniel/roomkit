@@ -48,8 +48,13 @@ internal static class WindowsPrivateFiles
         return security;
     }
 
-    internal static FileStream OpenDirectory(DirectoryInfo directory)
+    internal static FileStream OpenDirectory(DirectoryInfo directory, bool create = false)
     {
+        if (create && !directory.Exists && directory.LinkTarget is null)
+        {
+            CreateDirectory(directory);
+        }
+
         const uint OpenReparsePoint = 0x00200000;
         const uint BackupSemantics = 0x02000000;
         const uint OpenExisting = 3;
@@ -82,18 +87,55 @@ internal static class WindowsPrivateFiles
 
     public static byte[]? Read(FileInfo file, long maxBytes)
     {
-        CheckName(file.Name);
         using FileStream directory = OpenDirectory(file.Directory ?? throw new UnauthorizedAccessException());
+        return Read(directory, file.Name, maxBytes);
+    }
+
+    internal static byte[]? Read(FileStream directory, string name, long maxBytes)
+    {
+        using FileStream stream = OpenPrivateChild(directory, name);
+        return SafeFileReader.ReadCapped(stream, maxBytes);
+    }
+
+    private static FileStream OpenPrivateChild(FileStream directory, string name)
+    {
+        CheckName(name);
         const uint GenericRead = 0x80000000;
-        using SafeFileHandle handle = OpenChild(directory, file.Name, GenericRead, FileShare.Read | FileShare.Delete);
-        if ((File.GetAttributes(handle) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        SafeFileHandle handle = OpenChild(directory, name, GenericRead, FileShare.Read | FileShare.Delete);
+        try
         {
-            throw new UnauthorizedAccessException();
+            if ((File.GetAttributes(handle) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            FileStream stream = new(handle, FileAccess.Read);
+            CheckHandle(stream);
+            return stream;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    internal static void WritePrivateChild(FileStream directory, string name, byte[] bytes)
+    {
+        FileStream? target = null;
+        try
+        {
+            target = OpenPrivateChild(directory, name);
+        }
+        catch (FileNotFoundException)
+        {
+            // First write. Only a missing child of the verified directory permits creation.
         }
 
-        using FileStream stream = new(handle, FileAccess.Read);
-        CheckHandle(stream);
-        return SafeFileReader.ReadCapped(stream, maxBytes);
+        using (target)
+        {
+            Replace(directory, name, bytes);
+        }
     }
 
     public static void Replace(FileStream directory, string name, byte[] bytes)

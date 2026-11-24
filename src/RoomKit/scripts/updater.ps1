@@ -136,6 +136,83 @@ function Test-UpdateDue($Now, $Interval) {
     return $elapsed -lt 0 -or $elapsed -ge ($Interval * 60 - 60)
 }
 
+function Initialize-ZipReader {
+    if ('RoomKit.ReleaseZip' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+
+namespace RoomKit {
+    public static class ReleaseZip {
+        // PKWARE APPNOTE 4.3.12-16. ZipArchive.Entries materializes every central header at once.
+        // Walk the same directory first, using fixed-size reads and seeks over variable fields.
+        public static void CheckDirectory(Stream stream) {
+            using (BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, true)) {
+                int tailSize = (int)Math.Min(stream.Length, 22 + ushort.MaxValue);
+                long tailStart = stream.Seek(-tailSize, SeekOrigin.End);
+                byte[] tail = reader.ReadBytes(tailSize);
+                int i = tail.Length - 22;
+                while (i >= 0 && BitConverter.ToUInt32(tail, i) != 0x06054b50) i--;
+                if (i < 0 || i + 22 + BitConverter.ToUInt16(tail, i + 20) != tail.Length)
+                    throw new InvalidDataException("Invalid ZIP footer.");
+                long end = tailStart + i;
+                uint disk = BitConverter.ToUInt16(tail, i + 4), startDisk = BitConverter.ToUInt16(tail, i + 6);
+                ulong onDisk = BitConverter.ToUInt16(tail, i + 8), count = BitConverter.ToUInt16(tail, i + 10);
+                ulong size = BitConverter.ToUInt32(tail, i + 12), start = BitConverter.ToUInt32(tail, i + 16);
+                if (end >= 20) {
+                    stream.Position = end - 20;
+                    if (reader.ReadUInt32() == 0x07064b50) {
+                        if (reader.ReadUInt32() != 0) throw new InvalidDataException("Split ZIP.");
+                        ulong footer = reader.ReadUInt64();
+                        if (reader.ReadUInt32() != 1 || footer > (ulong)(end - 20) || (ulong)(end - 20) - footer < 56)
+                            throw new InvalidDataException("Invalid ZIP64 locator.");
+                        stream.Position = (long)footer;
+                        if (reader.ReadUInt32() != 0x06064b50 || reader.ReadUInt64() != (ulong)(end - 20) - footer - 12)
+                            throw new InvalidDataException("Invalid ZIP64 footer.");
+                        stream.Position += 4;
+                        disk = (uint)Zip64Value(disk, ushort.MaxValue, reader.ReadUInt32());
+                        startDisk = (uint)Zip64Value(startDisk, ushort.MaxValue, reader.ReadUInt32());
+                        onDisk = Zip64Value(onDisk, ushort.MaxValue, reader.ReadUInt64());
+                        count = Zip64Value(count, ushort.MaxValue, reader.ReadUInt64());
+                        size = Zip64Value(size, uint.MaxValue, reader.ReadUInt64());
+                        start = Zip64Value(start, uint.MaxValue, reader.ReadUInt64());
+                        end = (long)footer;
+                    }
+                }
+                if (count > 10000) throw new InvalidDataException("Too many ZIP entries.");
+                if (disk != 0 || startDisk != 0 || count != onDisk || start > (ulong)end || size != (ulong)end - start)
+                    throw new InvalidDataException("Invalid ZIP directory.");
+                stream.Position = (long)start;
+                int seen = 0;
+                while (stream.Position < end) {
+                    uint signature = reader.ReadUInt32();
+                    if (signature == 0x05054b50 && (ulong)seen == count) {
+                        int signatureSize = reader.ReadUInt16();
+                        if (signatureSize != end - stream.Position) throw new InvalidDataException("Invalid ZIP signature size.");
+                        break;
+                    }
+                    if (++seen > 10000) throw new InvalidDataException("Too many ZIP entries.");
+                    if (signature != 0x02014b50 || end - stream.Position < 42) throw new InvalidDataException("Invalid ZIP entry.");
+                    stream.Position += 24;
+                    int variableSize = reader.ReadUInt16() + reader.ReadUInt16() + reader.ReadUInt16();
+                    stream.Position += 12 + variableSize;
+                    if (stream.Position > end) throw new InvalidDataException("Invalid ZIP entry size.");
+                }
+                if ((ulong)seen != count) throw new InvalidDataException("Invalid ZIP entry count.");
+                stream.Position = 0;
+            }
+        }
+
+        private static ulong Zip64Value(ulong value, ulong sentinel, ulong extended) {
+            if (value != sentinel && value != extended) throw new InvalidDataException("Inconsistent ZIP64 footer.");
+            return extended;
+        }
+    }
+}
+'@
+}
+
 function Initialize-FileReader {
     if ('RoomKit.UpdateEntry' -as [type]) { return }
     Add-Type -TypeDefinition @'
@@ -360,14 +437,13 @@ function Expand-VerifiedZip($Zip, $Manifest, $Name, $Destination) {
     if ($digests.Count -ne 1 -or $digests[0] -notmatch '\A[0-9a-fA-F]{64}\z') { throw 'ZIP digest refused.' }
     $sha = [Security.Cryptography.SHA256]::Create()
     $stream = [IO.File]::OpenRead($Zip)
-    try { $actual = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '') }
-    finally { $stream.Dispose(); $sha.Dispose() }
-    if ($actual -ne $digests[0]) { throw 'ZIP digest refused.' }
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $archive = [IO.Compression.ZipFile]::OpenRead($Zip)
     try {
-        if ($archive.Entries.Count -gt 10000) { throw 'Too many ZIP entries.' }
+        $actual = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '')
+        if ($actual -ne $digests[0]) { throw 'ZIP digest refused.' }
+        Initialize-ZipReader
+        [RoomKit.ReleaseZip]::CheckDirectory($stream)
+        Add-Type -AssemblyName System.IO.Compression
+        $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $true)
         $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         [long]$total = 0
         foreach ($entry in $archive.Entries) {
@@ -403,7 +479,11 @@ function Expand-VerifiedZip($Zip, $Manifest, $Name, $Destination) {
                 if ($out.Length -ne $entry.Length) { throw 'Incomplete ZIP entry.' }
             } finally { $out.Dispose() }
         }
-    } finally { $archive.Dispose() }
+    } finally {
+        if ($archive) { $archive.Dispose() }
+        $stream.Dispose()
+        $sha.Dispose()
+    }
 }
 
 function Get-ReleaseFiles($Tag, $Work) {
@@ -422,18 +502,26 @@ function Get-RoomTask($Name) {
     Get-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction SilentlyContinue
 }
 
-function Get-ServerProcessId {
+function Get-TaskEngineId {
     $service = New-Object -ComObject 'Schedule.Service'
     $service.Connect()
     $task = $service.GetFolder('\').GetTask($ServerTask)
     $instances = $task.GetInstances(0)
     if ($instances.Count -ne 1) { return }
-    $engine = [int]$instances.Item(1).EnginePID
+    return [int]$instances.Item(1).EnginePID
+}
+
+function Get-ServerProcessId {
+    $engine = Get-TaskEngineId
     if ($engine -le 0) { return }
     $exe = Join-Path (Join-Path $Support 'server') $ServerName
-    # Task Scheduler can host the Exec action in an engine or report the action itself.
-    $processes = @(Get-CimInstance Win32_Process -Filter "ProcessId=$engine OR ParentProcessId=$engine" |
-        Where-Object { $_.ExecutablePath -eq $exe })
+    $tree = @(Get-CimInstance Win32_Process -Filter "ProcessId=$engine OR ParentProcessId=$engine")
+    # The engine can be the action itself or a scheduler host with the PowerShell action as its child.
+    $shell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
+    foreach ($child in @($tree | Where-Object { $_.ParentProcessId -eq $engine -and $_.ExecutablePath -eq $shell })) {
+        $tree += @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$([int]$child.ProcessId)")
+    }
+    $processes = @($tree | Where-Object { $_.ExecutablePath -eq $exe })
     if ($processes.Count -eq 1) { return [int]$processes[0].ProcessId }
 }
 
@@ -472,7 +560,16 @@ function Stop-RoomServer {
     try {
         if ($process) { [void]$process.Handle } # Keep a handle to this instance across the stop.
         Stop-ScheduledTask -InputObject $task
-        if ($process -and !$process.WaitForExit(15000)) { throw 'Server did not exit.' }
+        if ($process -and !$process.WaitForExit(15000)) {
+            # Some scheduler hosts stop the PowerShell action before its child. Use the held process handle.
+            try {
+                if ($process.MainModule.FileName -ine [IO.Path]::Combine($Support, 'server', $ServerName)) {
+                    throw 'Unexpected server process.'
+                }
+                $process.Kill()
+            } catch { if (!$process.HasExited) { throw } }
+            if (!$process.WaitForExit(15000)) { throw 'Server did not exit.' }
+        }
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             if ((Get-RoomTask $ServerTask).State -notin 'Running','Queued' -and !(Get-ServerProcessId)) { return }
             Wait-RoomPoll
@@ -501,13 +598,27 @@ function Remove-CodeDirectory($Path) {
 
 # The updater and server live in one directory. Each rename changes both, including on rollback.
 # On an incomplete recovery leave the previous directory on disk for the operator.
+function Move-ReleaseDirectory($Source, $Destination) { [IO.Directory]::Move($Source, $Destination) }
+
+function Save-RecoveryUpdater($Source) {
+    $path = Join-Path $Support 'recovery-updater.ps1'
+    $temp = Join-Path $Support ([IO.Path]::GetRandomFileName())
+    try {
+        [IO.File]::Copy($Source, $temp)
+        if ([IO.File]::Exists($path)) {
+            Assert-PrivatePath $path
+            [IO.File]::Replace($temp, $path, [NullString]::Value)
+        } else { [IO.File]::Move($temp, $path) }
+    } finally { [IO.File]::Delete($temp) }
+}
+
 function Restore-RoomRelease($Work, $Previous, $MovedNew, $MovedOld, $RestoreTasks) {
     $server = Join-Path $Support 'server'
     if ($MovedNew) {
         Stop-RoomServer
-        [IO.Directory]::Move($server, (Join-Path $Work 'new'))
+        Move-ReleaseDirectory $server (Join-Path $Work 'new')
     }
-    if ($MovedOld) { [IO.Directory]::Move((Join-Path $Work 'previous'), $server) }
+    if ($MovedOld) { Move-ReleaseDirectory (Join-Path $Work 'previous') $server }
     if ($RestoreTasks) { & $RestoreTasks }
     if ($Previous) {
         Start-RoomServer
@@ -524,13 +635,21 @@ function Switch-RoomRelease($Work, $Tag, $Previous, $Register, $RestoreTasks, [s
     $movedNew = $false
     $registrationAttempted = $false
     try {
-        if ([IO.Directory]::Exists($server)) { Assert-PrivatePath $server }
+        if ([IO.Directory]::Exists($server)) {
+            Assert-PrivatePath $server
+            Save-RecoveryUpdater (Join-Path $server 'updater.ps1')
+        } elseif (![IO.File]::Exists((Join-Path $Support 'recovery-updater.ps1'))) {
+            Save-RecoveryUpdater (Join-Path $staged 'updater.ps1')
+        }
+        if ($RecordResult) {
+            Write-PrivateText 'pending-swap' ($Previous + [char]10 + $Tag + [char]10 + (Get-RunStamp)) $Work
+        }
         Stop-RoomServer
         if ([IO.Directory]::Exists($server)) {
-            [IO.Directory]::Move($server, $backup)
+            Move-ReleaseDirectory $server $backup
             $movedOld = $true
         }
-        [IO.Directory]::Move($staged, $server)
+        Move-ReleaseDirectory $staged $server
         $movedNew = $true
         $reason = 'bootstrap_failed'
         if ($Register) {
@@ -553,9 +672,12 @@ function Switch-RoomRelease($Work, $Tag, $Previous, $Register, $RestoreTasks, [s
     }
 }
 
-function Save-UpdateResult($Work, $Tag, $Previous, $Reason) {
-    $now = Get-UpdateTime
-    $record = @{ run = $now.UtcDateTime.ToString('yyyyMMddTHHmmssZ', [cultureinfo]::InvariantCulture); version = $Tag.Substring(1) }
+function Get-RunStamp {
+    return (Get-UpdateTime).UtcDateTime.ToString('yyyyMMddTHHmmssZ', [cultureinfo]::InvariantCulture)
+}
+
+function Save-UpdateResult($Work, $Tag, $Previous, $Reason, $Run = (Get-RunStamp)) {
+    $record = @{ run = $Run; version = $Tag.Substring(1) }
     if ($Reason) {
         $record.result = 'update_failed'
         $record.reason = $Reason
@@ -613,23 +735,52 @@ function Publish-StagedResult($Work) {
                     $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
                     Restore-RoomRelease $Work $previous $backup $backup
                 } catch { $reason = 'rollback_failed' }
-                Save-UpdateResult $Work $target $previous $reason
+                Save-UpdateResult $Work $target $previous $reason $record.run
                 $text = Read-PrivateText 'pending-result.json' 4KB $Work
             }
         }
     }
     Write-PrivateText 'update-result.json' $text
+    [IO.File]::Delete((Join-Path $Work 'pending-swap'))
     [IO.File]::Delete((Join-Path $Work 'pending-result.json'))
     return $reason
+}
+
+function Recover-StagedSwap($Work) {
+    $intent = (Read-PrivateText 'pending-swap' 512 $Work).Split([char]10)
+    if ($intent.Count -ne 3 -or $intent[0].Length -gt 129 -or $intent[0] -cnotmatch $TagPattern -or
+        $intent[1].Length -gt 129 -or $intent[1] -cnotmatch $TagPattern -or (Compare-Tags $intent[1] $intent[0]) -le 0 -or
+        $intent[2] -cnotmatch '\A[0-9]{8}T[0-9]{6}Z\z' -or (Read-PrivateText 'installed-release' 200).Trim() -cne $intent[0]) {
+        throw 'Invalid staged swap.'
+    }
+    $previous = $intent[0]
+    $reason = 'swap'
+    try {
+        $server = [IO.Directory]::Exists((Join-Path $Support 'server'))
+        $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
+        if ($backup) { Restore-RoomRelease $Work $previous $server $true }
+        elseif (!$server) { throw 'Previous release is missing.' }
+        elseif (!(Get-ServerProcessId) -or !(Wait-ServerHealth $previous.Substring(1))) {
+            Stop-RoomServer
+            Restore-RoomRelease $Work $previous $false $false
+        }
+    } catch { $reason = 'rollback_failed' }
+    Save-UpdateResult $Work $intent[1] $previous $reason $intent[2]
 }
 
 function Complete-StagedResults {
     foreach ($stage in (Get-ChildItem -LiteralPath $Support -Force -Directory -Filter 'stage-*')) {
         if ($stage.Name -cnotmatch '\Astage-[0-9a-f]{32}\z') { continue }
         Assert-PrivatePath $stage.FullName
-        if ([IO.File]::Exists((Join-Path $stage.FullName 'pending-result.json'))) {
+        $pending = Join-Path $stage.FullName 'pending-result.json'
+        if (![IO.File]::Exists($pending) -and [IO.File]::Exists((Join-Path $stage.FullName 'pending-swap'))) {
+            Recover-StagedSwap $stage.FullName
+        }
+        if ([IO.File]::Exists($pending)) {
             $reason = Publish-StagedResult $stage.FullName
             if ($reason -cne 'rollback_failed') { Remove-CodeDirectory $stage.FullName }
+            if ($reason) { return $reason }
+            return 'updated'
         }
     }
 }
@@ -640,7 +791,6 @@ function Invoke-RoomUpdate($Root) {
     $lock = Get-UpdateLock
     if (!$lock) { return 'busy' }
     try {
-        Complete-StagedResults
         $settings = Get-UpdateSettings
         if (!$settings.Enabled) { return 'off' }
         $installed = ('' + (Read-PrivateText 'installed-release' 200)).TrimEnd([char]10)
@@ -648,6 +798,8 @@ function Invoke-RoomUpdate($Root) {
         $now = Get-UpdateTime
         if (!(Test-UpdateDue $now $settings.Interval)) { return 'not_due' }
         if (Test-JobRunning $Root) { return 'job_running' }
+        $recovered = Complete-StagedResults
+        if ($recovered) { return $recovered }
         # Linked, locked or non-file stamps stay untouched. Release discovery is still due.
         try { Write-PrivateText 'last-check' ($now.ToUnixTimeSeconds().ToString() + [char]10) } catch { }
         [IO.File]::Delete((Join-Path $Support 'first-check'))
@@ -668,7 +820,7 @@ function Invoke-RoomUpdate($Root) {
             if ($reason) { return $reason }
             return 'updated'
         } finally {
-            if (![IO.File]::Exists((Join-Path $work 'pending-result.json')) -and
+            if (![IO.File]::Exists((Join-Path $work 'pending-swap')) -and ![IO.File]::Exists((Join-Path $work 'pending-result.json')) -and
                 ($reason -ne 'rollback_failed' -or ![IO.Directory]::Exists((Join-Path $work 'previous')))) {
                 Remove-CodeDirectory $work
             }

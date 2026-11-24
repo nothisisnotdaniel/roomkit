@@ -98,7 +98,7 @@ Windows apps copy `scripts/launch-agent.ps1` and `scripts/updater.ps1` from the 
 
 Publish the single-file executable, `wwwroot` and both scripts at the root of `<prefix>-<version>-win-x64.zip`. Add one SHA-256 entry for that filename to the release's `SHA256SUMS`. The installer accepts `install -FactoryRoot <path> [-Release <tag>] [-TailnetHost <host>]`, `status` and `uninstall`. A running update checks the scheduled server's PID, listener and health version before advancing the release marker.
 
-The Windows updater reads up to ten pages of 100 releases, with a 1 MiB limit per page. An incomplete release scan or an unreadable job state defers installation. If another process holds the result file open, the updater keeps the outcome and previous code in its private staging folder and retries the write on its next invocation.
+The Windows updater reads up to ten pages of 100 releases, with a 1 MiB limit per page. An incomplete release scan or an unreadable job state defers installation. Before stopping the server, the updater saves the previous and target versions in its private staging folder. Its scheduled task can use a recovery copy while the server directory is being replaced. If a swap is interrupted or the result file is held open, recovery resumes on the next enabled, due invocation with the update lock and no active job. Uninstall removes the installed code, recovery copy and staging folders and preserves the token and settings.
 
 ## Feed and versioning
 
