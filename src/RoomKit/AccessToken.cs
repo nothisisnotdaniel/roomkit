@@ -219,7 +219,6 @@ internal static class AccessToken
         }
 
         string temp = Path.Combine(folder, "." + FileName + "-" + Guid.NewGuid().ToString("N") + ".tmp");
-        string token = Generate(random);
         try
         {
             if (OperatingSystem.IsWindows())
@@ -231,8 +230,13 @@ internal static class AccessToken
                 }
 
                 using FileStream parent = WindowsPrivateFiles.OpenDirectory(directory);
-                WindowsPrivateFiles.Replace(parent, Path.GetFileName(full), Encoding.ASCII.GetBytes(token + "\n"));
-                return token;
+                string? replacement = null;
+                WindowsPrivateFiles.Replace(parent, Path.GetFileName(full), stream =>
+                {
+                    replacement = Generate(random);
+                    stream.Write(Encoding.ASCII.GetBytes(replacement + "\n"));
+                });
+                return replacement;
             }
 
             if (!Directory.Exists(folder))
@@ -241,6 +245,7 @@ internal static class AccessToken
                 File.SetUnixFileMode(folder, FolderMode);
             }
 
+            string token = Generate(random);
             using (FileStream stream = CreatePrivateFile(temp))
             {
                 byte[] bytes = Encoding.ASCII.GetBytes(token + "\n");

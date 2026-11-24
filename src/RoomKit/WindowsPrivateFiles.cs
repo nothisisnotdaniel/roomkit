@@ -134,11 +134,11 @@ internal static class WindowsPrivateFiles
 
         using (target)
         {
-            Replace(directory, name, bytes);
+            Replace(directory, name, stream => stream.Write(bytes));
         }
     }
 
-    public static void Replace(FileStream directory, string name, byte[] bytes)
+    public static void Replace(FileStream directory, string name, Action<FileStream> write)
     {
         CheckName(name);
         const uint WriteAndDelete = 0x40000000 | (uint)FileSystemRights.Delete;
@@ -147,7 +147,7 @@ internal static class WindowsPrivateFiles
         using FileStream stream = new(handle, FileAccess.Write);
         try
         {
-            stream.Write(bytes);
+            write(stream);
             stream.Flush(flushToDisk: true);
             RenameChild(handle, name);
         }

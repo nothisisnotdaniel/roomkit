@@ -9,26 +9,61 @@ param(
 # The sibling updater supplies the app assignments and the shared verification and swap code.
 . (Join-Path $PSScriptRoot 'updater.ps1')
 
-function New-RoomAction($Command) {
-    # Scheduler expands %NAME% in all three properties. Only the system shell path is expandable.
-    # Decode the installed location inside PowerShell, after the scheduler has launched it.
-    $location = [Convert]::ToBase64String($Utf8.GetBytes($Support))
-    $script = "`$ErrorActionPreference='Stop'; Set-Location -LiteralPath ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$location'))); " + $Command
+function Invoke-InstalledTask($Config) {
+    $Support = $Config.Support
+    $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $held = [Collections.Generic.Stack[IDisposable]]::new()
+    try {
+        $held.Push((Open-PrivateCodeEntry $Support -Directory))
+        Set-Location -LiteralPath $Support
+        $server = Join-Path $Support 'server'
+        if ($Config.Updater -and ((Get-PendingStages) -or ![IO.Directory]::Exists($server))) {
+            $entry = Join-Path $Support 'recovery-updater.ps1'
+        } else {
+            $held.Push((Open-PrivateCodeEntry $server -Directory))
+            $entry = Join-Path $server $Config.Name
+        }
+        if ($Config.Updater) {
+            $held.Push((Open-PrivateCodeEntry $entry -Limit $Config.Limit))
+            # PowerShell loads the verified script while its file and directories are pinned.
+            # Release the handles before invoking its update, which may rename those directories.
+            . $entry
+        } else {
+            $held.Push((Open-PrivateCodeEntry $entry))
+            $arguments = @('--FactoryRootBase64', $Config.Root64)
+            if ($Config.Tailnet) { $arguments += '--TailnetHost', $Config.Tailnet }
+            $process = Start-Process -FilePath $entry -ArgumentList $arguments -WorkingDirectory $Support -WindowStyle Hidden -Wait -PassThru
+            exit $process.ExitCode
+        }
+    } finally { while ($held.Count) { $held.Pop().Dispose() } }
+    Invoke-RoomUpdate ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Config.Root64)))
+}
+
+function New-RoomAction($Root, $Tailnet, [switch]$Updater) {
+    $name = if ($Updater) { 'updater.ps1' } else { $ServerName }
+    $config = @{
+        Support = $Support; Name = $name; Limit = $UpdaterLimit; Updater = $Updater.IsPresent
+        Root64 = [Convert]::ToBase64String($Utf8.GetBytes($Root)); Tailnet = $Tailnet
+    }
+    $data = [Convert]::ToBase64String($Utf8.GetBytes(($config | ConvertTo-Json -Compress)))
+    # Register the checks themselves in the action. No installed script executes before its checks.
+    $script = @(
+        '$ErrorActionPreference = ''Stop'''
+        foreach ($name in 'Initialize-FileReader','Assert-PrivateAcl','Open-PrivateCodeEntry','Get-PendingStages','Invoke-InstalledTask') {
+            (Get-Command -Name $name -CommandType Function).ScriptBlock.Ast.Extent.Text
+        }
+        "Invoke-InstalledTask ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$data')) | ConvertFrom-Json)"
+    ) -join [Environment]::NewLine
+    # The scheduler expands environment variables even inside quoted action properties.
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
     $system = '%SystemRoot%\System32'
     New-ScheduledTaskAction -Execute "$system\WindowsPowerShell\v1.0\powershell.exe" -WorkingDirectory $system -Argument (
-        '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy RemoteSigned -Command "' + $script + '"')
+        "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy RemoteSigned -EncodedCommand $encoded")
 }
 
 function Register-RoomTasks($Root, $Tailnet) {
-    $encodedRoot = [Convert]::ToBase64String($Utf8.GetBytes($Root))
-    $exe = [Convert]::ToBase64String($Utf8.GetBytes([IO.Path]::Combine($Support, 'server', $ServerName)))
-    $serverArgs = "'--FactoryRootBase64','$encodedRoot'"
-    if ($Tailnet) { $serverArgs += ",'--TailnetHost','$Tailnet'" }
-    $path = "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$exe')))"
-    $serverCommand = "`$server = Start-Process -FilePath $path -ArgumentList $serverArgs -WorkingDirectory `$PWD.ProviderPath -WindowStyle Hidden -Wait -PassThru"
-    $serverAction = New-RoomAction ($serverCommand + '; exit $server.ExitCode')
-    $updaterCommand = '$entry = ''.\server\updater.ps1''; if (![IO.File]::Exists((Join-Path $PWD $entry))) { $entry = ''.\recovery-updater.ps1'' }; '
-    $updateAction = New-RoomAction ($updaterCommand + "& `$entry -FactoryRootBase64 '$encodedRoot'")
+    $serverAction = New-RoomAction $Root $Tailnet
+    $updateAction = New-RoomAction $Root $Tailnet -Updater
     $principal = New-ScheduledTaskPrincipal -UserId $UserSid.Value -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $logon = New-ScheduledTaskTrigger -AtLogOn -User $UserSid.Value
@@ -53,12 +88,12 @@ function Install-Room($Root, $Tag, $Tailnet) {
     $lock = Get-UpdateLock
     if (!$lock) { throw 'An installation or update is already running.' }
     try {
-        while (Complete-StagedResults) { } # Finish each previously staged operation before a manual install.
         if (!$Tag) { $Tag = Get-LatestTag (Get-UpdateSettings).Channel }
         $work = New-ReleaseWork
         $reason = $null
         try {
             Get-ReleaseFiles $Tag $work
+            while (Complete-StagedResults) { }
             $previous = ('' + (Read-PrivateText 'installed-release' 200)).TrimEnd([char]10)
             if ($previous -and $previous -cnotmatch $TagPattern) { throw 'Invalid installed release.' }
             $oldTasks = @{}

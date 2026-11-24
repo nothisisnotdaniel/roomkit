@@ -20,6 +20,7 @@ $UpdaterTask = "$TaskPrefix-updater-$($UserSid.Value)"
 $identifier = '(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
 $TagPattern = "\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-($identifier(?:\.$identifier)*))?\z"
 $Utf8 = [Text.UTF8Encoding]::new($false, $true)
+$UpdaterLimit = 256KB
 
 function Assert-PrivatePath($Path) {
     $item = Get-Item -LiteralPath $Path -Force
@@ -30,7 +31,11 @@ function Assert-PrivatePath($Path) {
     } else {
         $item.GetAccessControl($sections)
     }
-    $raw = [Security.AccessControl.RawSecurityDescriptor]::new($acl.GetSecurityDescriptorBinaryForm(), 0)
+    Assert-PrivateAcl $acl
+}
+
+function Assert-PrivateAcl($Acl) {
+    $raw = [Security.AccessControl.RawSecurityDescriptor]::new($Acl.GetSecurityDescriptorBinaryForm(), 0)
     if ($raw.Owner -ne $UserSid -or $null -eq $raw.DiscretionaryAcl) { throw 'Unsafe private owner or DACL.' }
     foreach ($rule in $raw.DiscretionaryAcl) {
         if ($rule -isnot [Security.AccessControl.CommonAce] -or
@@ -38,6 +43,26 @@ function Assert-PrivatePath($Path) {
              ($rule.AceQualifier -ne 'AccessAllowed' -or $rule.SecurityIdentifier -ne $UserSid))) {
             throw 'Unsafe private permissions.'
         }
+    }
+}
+
+# Keep the no-follow handle open through copying or loading code. Its sharing mode
+# prevents the checked entry from being written, renamed or replaced in that interval.
+function Open-PrivateCodeEntry($Path, [switch]$Directory, [long]$Limit = [long]::MaxValue) {
+    Initialize-FileReader
+    $handle = [RoomKit.UpdateEntry]::Open($Path, $Directory.IsPresent)
+    if (!$handle) { throw 'Missing installed code.' }
+    try {
+        $stream = [IO.FileStream]::new($handle, [IO.FileAccess]::Read)
+        $acl = if ($PSVersionTable.PSEdition -eq 'Core') {
+            [IO.FileSystemAclExtensions]::GetAccessControl($stream)
+        } else { $stream.GetAccessControl() }
+        Assert-PrivateAcl $acl
+        if (!$Directory -and ($stream.Length -eq 0 -or $stream.Length -gt $Limit)) { throw 'Invalid installed code size.' }
+        return $stream
+    } catch {
+        if ($stream) { $stream.Dispose() } else { $handle.Dispose() }
+        throw
     }
 }
 
@@ -465,6 +490,8 @@ function Expand-VerifiedZip($Zip, $Manifest, $Name, $Destination) {
         foreach ($required in $ServerName,'updater.ps1','launch-agent.ps1','wwwroot/index.html','wwwroot/app.css') {
             if (!$archive.GetEntry($required) -or $archive.GetEntry($required).Length -eq 0) { throw 'Incomplete release.' }
         }
+        if ($archive.GetEntry('updater.ps1').Length -gt $UpdaterLimit) { throw 'Release updater exceeds limit.' }
+        New-PrivateDirectory $Destination
         foreach ($entry in $archive.Entries) {
             $path = [IO.Path]::Combine($Destination, $entry.FullName)
             if ($entry.FullName.EndsWith('/')) {
@@ -472,7 +499,7 @@ function Expand-VerifiedZip($Zip, $Manifest, $Name, $Destination) {
                 continue
             }
             [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
-            $out = [IO.File]::Open($path, 'CreateNew', 'Write', 'None')
+            $out = New-PrivateFile $path
             try {
                 $source = $entry.Open()
                 try { Copy-LimitedStream $source $out $entry.Length } finally { $source.Dispose() }
@@ -600,16 +627,22 @@ function Remove-CodeDirectory($Path) {
 # On an incomplete recovery leave the previous directory on disk for the operator.
 function Move-ReleaseDirectory($Source, $Destination) { [IO.Directory]::Move($Source, $Destination) }
 
-function Save-RecoveryUpdater($Source) {
+function Save-RecoveryUpdater($CodeFolder) {
     $path = Join-Path $Support 'recovery-updater.ps1'
     $temp = Join-Path $Support ([IO.Path]::GetRandomFileName())
+    $folder = Open-PrivateCodeEntry $CodeFolder -Directory
     try {
-        [IO.File]::Copy($Source, $temp)
+        $source = Open-PrivateCodeEntry (Join-Path $CodeFolder 'updater.ps1') -Limit $UpdaterLimit
+        try {
+            $out = New-PrivateFile $temp
+            try { Copy-LimitedStream $source $out $UpdaterLimit; $out.Flush($true) }
+            finally { $out.Dispose() }
+        } finally { $source.Dispose() }
         if ([IO.File]::Exists($path)) {
-            Assert-PrivatePath $path
+            (Open-PrivateCodeEntry $path -Limit $UpdaterLimit).Dispose()
             [IO.File]::Replace($temp, $path, [NullString]::Value)
         } else { [IO.File]::Move($temp, $path) }
-    } finally { [IO.File]::Delete($temp) }
+    } finally { $folder.Dispose(); [IO.File]::Delete($temp) }
 }
 
 function Restore-RoomRelease($Work, $Previous, $MovedNew, $MovedOld, $RestoreTasks) {
@@ -636,14 +669,15 @@ function Switch-RoomRelease($Work, $Tag, $Previous, $Register, $RestoreTasks, [s
     $registrationAttempted = $false
     try {
         if ([IO.Directory]::Exists($server)) {
-            Assert-PrivatePath $server
-            Save-RecoveryUpdater (Join-Path $server 'updater.ps1')
+            Save-RecoveryUpdater $server
         } elseif (![IO.File]::Exists((Join-Path $Support 'recovery-updater.ps1'))) {
-            Save-RecoveryUpdater (Join-Path $staged 'updater.ps1')
+            Save-RecoveryUpdater $staged
         }
         if ($RecordResult) {
             Write-PrivateText 'pending-swap' ($Previous + [char]10 + $Tag + [char]10 + (Get-RunStamp)) $Work
         }
+    } catch { return $reason } # The running installation has not been touched.
+    try {
         Stop-RoomServer
         if ([IO.Directory]::Exists($server)) {
             Move-ReleaseDirectory $server $backup
@@ -714,6 +748,19 @@ function Read-StagedRecord($Text) {
     return $record
 }
 
+# A stopped process can leave either rename of a rollback complete. Observe each
+# directory independently, including when the previous code is already back in place.
+function Restore-StagedRelease($Work, $Previous) {
+    $server = [IO.Directory]::Exists((Join-Path $Support 'server'))
+    $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
+    if ($backup) { Restore-RoomRelease $Work $Previous $server $true }
+    elseif (!$server) { throw 'Previous release is missing.' }
+    elseif (!(Get-ServerProcessId) -or !(Wait-ServerHealth $Previous.Substring(1))) {
+        Stop-RoomServer
+        Restore-RoomRelease $Work $Previous $false $false
+    }
+}
+
 # The pending record and the previous code survive a sharing error on the public result.
 # Replaying the same bytes preserves the run identifier used for notification deduplication.
 function Publish-StagedResult($Work) {
@@ -731,10 +778,7 @@ function Publish-StagedResult($Work) {
                 Write-PrivateText 'installed-release' ($target + [char]10)
             } else {
                 $reason = 'no_answer'
-                try {
-                    $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
-                    Restore-RoomRelease $Work $previous $backup $backup
-                } catch { $reason = 'rollback_failed' }
+                try { Restore-StagedRelease $Work $previous } catch { $reason = 'rollback_failed' }
                 Save-UpdateResult $Work $target $previous $reason $record.run
                 $text = Read-PrivateText 'pending-result.json' 4KB $Work
             }
@@ -755,33 +799,28 @@ function Recover-StagedSwap($Work) {
     }
     $previous = $intent[0]
     $reason = 'swap'
-    try {
-        $server = [IO.Directory]::Exists((Join-Path $Support 'server'))
-        $backup = [IO.Directory]::Exists((Join-Path $Work 'previous'))
-        if ($backup) { Restore-RoomRelease $Work $previous $server $true }
-        elseif (!$server) { throw 'Previous release is missing.' }
-        elseif (!(Get-ServerProcessId) -or !(Wait-ServerHealth $previous.Substring(1))) {
-            Stop-RoomServer
-            Restore-RoomRelease $Work $previous $false $false
-        }
-    } catch { $reason = 'rollback_failed' }
+    try { Restore-StagedRelease $Work $previous } catch { $reason = 'rollback_failed' }
     Save-UpdateResult $Work $intent[1] $previous $reason $intent[2]
 }
 
-function Complete-StagedResults {
+function Get-PendingStages {
     foreach ($stage in (Get-ChildItem -LiteralPath $Support -Force -Directory -Filter 'stage-*')) {
         if ($stage.Name -cnotmatch '\Astage-[0-9a-f]{32}\z') { continue }
-        Assert-PrivatePath $stage.FullName
-        $pending = Join-Path $stage.FullName 'pending-result.json'
-        if (![IO.File]::Exists($pending) -and [IO.File]::Exists((Join-Path $stage.FullName 'pending-swap'))) {
-            Recover-StagedSwap $stage.FullName
-        }
-        if ([IO.File]::Exists($pending)) {
-            $reason = Publish-StagedResult $stage.FullName
-            if ($reason -cne 'rollback_failed') { Remove-CodeDirectory $stage.FullName }
-            if ($reason) { return $reason }
-            return 'updated'
-        }
+        $folder = Open-PrivateCodeEntry $stage.FullName -Directory
+        try {
+            if ([IO.File]::Exists((Join-Path $stage.FullName 'pending-swap')) -or
+                [IO.File]::Exists((Join-Path $stage.FullName 'pending-result.json'))) { $stage.FullName }
+        } finally { $folder.Dispose() }
+    }
+}
+
+function Complete-StagedResults {
+    foreach ($work in (Get-PendingStages)) {
+        if (![IO.File]::Exists((Join-Path $work 'pending-result.json'))) { Recover-StagedSwap $work }
+        $reason = Publish-StagedResult $work
+        if ($reason -cne 'rollback_failed') { Remove-CodeDirectory $work }
+        if ($reason) { return $reason }
+        return 'updated'
     }
 }
 
