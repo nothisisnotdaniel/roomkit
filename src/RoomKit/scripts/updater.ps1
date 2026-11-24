@@ -290,12 +290,138 @@ namespace RoomKit {
 '@
 }
 
+function Open-FactoryRoot($Root) {
+    Initialize-FileReader
+    try { $handle = [RoomKit.UpdateEntry]::Open($Root, $true) }
+    catch [IO.IOException] { throw 'Supply -FactoryRoot with the physical directory. For a link or junction, use its target path.' }
+    if (!$handle) { throw 'Supply -FactoryRoot with an existing directory.' }
+    return $handle
+}
+
+function Initialize-JobReader {
+    if ('RoomKit.JobStateFile' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
+
+namespace RoomKit {
+    public sealed class JobStateFile : IDisposable {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CountedName { public ushort Length, MaximumLength; public IntPtr Buffer; }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ObjectAttributes {
+            public int Length; public IntPtr Root, Name; public uint Flags; public IntPtr Security, QualityOfService;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IoStatus { public IntPtr Status, Information; }
+        [DllImport("ntdll.dll")]
+        private static extern int NtCreateFile(out SafeFileHandle file, uint access, ref ObjectAttributes attributes,
+            out IoStatus io, IntPtr allocation, uint fileAttributes, FileShare share, uint disposition, uint options,
+            IntPtr extendedAttributes, uint extendedLength);
+        [DllImport("ntdll.dll")]
+        private static extern uint RtlNtStatusToDosError(int status);
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AttributeTag { public FileAttributes Attributes; public uint Tag; }
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int kind,
+            out AttributeTag info, uint size);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct OplockInput { public ushort Version, Length; public uint Level, Flags; }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct OplockOutput {
+            public ushort Version, Length; public uint Original, Current, Flags, Access; public ushort Share;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Request { public NativeOverlapped Io; public OplockInput Input; public OplockOutput Output; }
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool DeviceIoControl(SafeFileHandle handle, uint code, ref OplockInput input,
+            uint inputSize, ref OplockOutput output, uint outputSize, out uint returned, ref NativeOverlapped io);
+
+        private readonly SafeFileHandle file;
+        private readonly Request[] request = new Request[1];
+        private GCHandle pin;
+        private bool pending;
+        public readonly ManualResetEvent Changed = new ManualResetEvent(false);
+        public FileStream Stream { get; private set; }
+
+        private JobStateFile(SafeFileHandle file) { this.file = file; }
+
+        public static JobStateFile Open(SafeFileHandle jobs, string name) {
+            ushort bytes = checked((ushort)(name.Length * 2));
+            GCHandle buffer = GCHandle.Alloc(name, GCHandleType.Pinned);
+            try {
+                GCHandle counted = GCHandle.Alloc(new CountedName { Buffer = buffer.AddrOfPinnedObject(),
+                    Length = bytes, MaximumLength = bytes }, GCHandleType.Pinned);
+                try {
+                    // OBJ_DONT_REPARSE covers both components relative to the pinned jobs directory.
+                    ObjectAttributes attributes = new ObjectAttributes { Length = Marshal.SizeOf(typeof(ObjectAttributes)),
+                        Root = jobs.DangerousGetHandle(), Name = counted.AddrOfPinnedObject(), Flags = 0x1000 | 0x40 };
+                    SafeFileHandle handle;
+                    IoStatus io;
+                    // FILE_OPEN_REQUIRING_OPLOCK | FILE_NON_DIRECTORY_FILE reserves the oplock at open.
+                    int status = NtCreateFile(out handle, 0x80000000, ref attributes, out io, IntPtr.Zero, 0,
+                        FileShare.Read | FileShare.Delete, 1, 0x10000 | 0x40, IntPtr.Zero, 0);
+                    GC.KeepAlive(jobs);
+                    if (status < 0) {
+                        if (handle != null) handle.Dispose();
+                        if (status == unchecked((int)0xc0000034)) return null; // state file does not exist
+                        throw new Win32Exception((int)RtlNtStatusToDosError(status));
+                    }
+                    JobStateFile record = new JobStateFile(handle);
+                    try { record.StartRead(); return record; }
+                    catch { record.Dispose(); throw; }
+                } finally { counted.Free(); }
+            } finally { buffer.Free(); }
+        }
+
+        private void StartRead() {
+            // FSCTL_REQUEST_OPLOCK, read and handle caching. A conflicting rename waits until close.
+            // Issue this before any other I/O on the reserved handle.
+            pin = GCHandle.Alloc(request, GCHandleType.Pinned);
+            request[0].Input = new OplockInput { Version = 1, Length = (ushort)Marshal.SizeOf(typeof(OplockInput)),
+                Level = 3, Flags = 1 };
+            // Use the event only for this request, even if FileStream binds the handle to a completion port.
+            request[0].Io.EventHandle = new IntPtr(Changed.SafeWaitHandle.DangerousGetHandle().ToInt64() | 1);
+            uint returned;
+            bool completed = DeviceIoControl(file, 0x90240, ref request[0].Input, request[0].Input.Length,
+                ref request[0].Output, (uint)Marshal.SizeOf(typeof(OplockOutput)), out returned, ref request[0].Io);
+            int error = Marshal.GetLastWin32Error();
+            if (completed || error != 997) throw new IOException("Cannot reserve the job state for reading.", new Win32Exception(error));
+            pending = true;
+            AttributeTag info;
+            if (!GetFileInformationByHandleEx(file, 9, out info, 8)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if ((info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint | FileAttributes.Device)) != 0)
+                throw new IOException("Unsafe job state file.");
+            Stream = new FileStream(file, FileAccess.Read, 4096, true);
+        }
+
+        public void Dispose() {
+            if (Stream != null) Stream.Dispose();
+            file.Dispose();
+            // Closing cancels an outstanding request and acknowledges a break. Keep its storage until completion.
+            if (pending) Changed.WaitOne();
+            if (pin.IsAllocated) pin.Free();
+            Changed.Dispose();
+        }
+    }
+}
+'@
+}
+
+function Read-JobState($Record) {
+    $json = Read-LimitedText $Record.Stream 64KB -DetectEncoding
+    if (!$Record.Changed.WaitOne(0)) { return $json }
+}
+
 function Test-JobRunning($Root) {
     $parents = [Collections.Generic.Stack[IDisposable]]::new()
     try {
-        Initialize-FileReader
-        $rootHandle = [RoomKit.UpdateEntry]::Open($Root, $true)
-        if (!$rootHandle) { return $true }
+        $rootHandle = Open-FactoryRoot $Root
         $parents.Push($rootHandle)
         $jobs = [RoomKit.UpdateEntry]::FinalPath($rootHandle)
         foreach ($part in $JobsFolder.Split('/')) {
@@ -304,21 +430,16 @@ function Test-JobRunning($Root) {
             if (!$handle) { return $false }
             $parents.Push($handle)
         }
-        # Directory enumeration includes hidden jobs. Keep every directory handle until its children are checked.
+        # Open relative to jobs so the worker can write the job folder while its state is being read.
+        Initialize-JobReader
         foreach ($path in [IO.Directory]::EnumerateDirectories($jobs)) {
-            $folder = [RoomKit.UpdateEntry]::Open($path, $true)
-            if (!$folder) { return $true }
-            try {
-                $file = [RoomKit.UpdateEntry]::Open([IO.Path]::Combine($path, $JobFile), $false)
-                if (!$file) { continue }
-                try {
-                    $stream = [IO.FileStream]::new($file, [IO.FileAccess]::Read)
-                    try { $json = Read-LimitedText $stream 64KB -DetectEncoding } finally { $stream.Dispose() }
-                } finally { $file.Dispose() }
-                if (!$json.TrimStart().StartsWith('{')) { return $true }
-                $job = ConvertFrom-Json -InputObject $json
-                if ($job.stage -isnot [string] -or !$job.stage -or $job.stage -cin 'spike','spec','build','review') { return $true }
-            } finally { $folder.Dispose() }
+            $name = [IO.Path]::Combine([IO.Path]::GetFileName($path), $JobFile)
+            $record = [RoomKit.JobStateFile]::Open($parents.Peek(), $name)
+            if (!$record) { continue }
+            try { $json = Read-JobState $record } finally { $record.Dispose() }
+            if (!$json -or !$json.TrimStart().StartsWith('{')) { return $true }
+            $job = ConvertFrom-Json -InputObject $json
+            if ($job.stage -isnot [string] -or !$job.stage -or $job.stage -cin 'spike','spec','build','review') { return $true }
         }
         return $false
     } catch { return $true }

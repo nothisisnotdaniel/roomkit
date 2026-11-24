@@ -90,6 +90,7 @@ function Install-Room($Root, $Tag, $Tailnet) {
     $directory = if ($Root) { Get-Item -LiteralPath $Root -Force -ErrorAction SilentlyContinue }
     if ($directory -isnot [IO.DirectoryInfo]) { throw 'Supply -FactoryRoot with an existing directory.' }
     $rootPath = $directory.FullName
+    (Open-FactoryRoot $rootPath).Dispose()
     if ($Tailnet -and ($Tailnet.Length -gt 253 -or $Tailnet -cnotmatch '\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}ts\.net\z')) {
         throw 'Invalid tailnet host.'
     }
