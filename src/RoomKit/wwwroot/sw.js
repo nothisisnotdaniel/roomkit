@@ -2,16 +2,21 @@ importScripts("/room.js");
 "use strict";
 
 // Caches only the app shell. Backlog, story and job data are never cached, so an unreachable server shows the
-// app's fixed text instead of old data. Bump the version when the shell list changes.
+// app's fixed text instead of old data. Shell files load network-first: the cache answers only when the network
+// fails, so an update reaches the app on its next load. A new worker takes over at once and drops every older
+// cache. Bump CacheVersion in room.js whenever a shell file changes.
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CacheName).then((cache) => cache.addAll(Shell)));
+  event.waitUntil(caches.open(CacheName)
+    .then((cache) => cache.addAll(Shell.map((path) => new Request(path, { cache: "no-cache" }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((names) =>
-      Promise.all(names.filter((name) => name !== CacheName).map((name) => caches.delete(name)))));
+      Promise.all(names.filter((name) => name !== CacheName).map((name) => caches.delete(name))))
+      .then(() => self.clients.claim()));
 });
 
 function isShellRequest(request) {
@@ -28,29 +33,33 @@ function isShellRequest(request) {
   return Shell.includes(url.pathname);
 }
 
-async function staleWhileRevalidate(event) {
+async function networkFirst(event) {
   // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.
   const key = new URL(event.request.url).pathname;
   const cache = await caches.open(CacheName);
-  const cached = await cache.match(key);
-  const network = fetch(event.request).then(async (response) => {
-    if (response.ok) {
-      await cache.put(key, response.clone());
-    }
-    return response;
-  });
-  if (cached) {
-    event.waitUntil(network.catch(() => undefined));
-    return cached;
+  let response;
+  try {
+    response = await fetch(event.request, { cache: "no-cache" });
+  } catch {
+    // No network answer (offline or unreachable): the cached copy, else a network error.
+    const cached = await cache.match(key);
+    return cached || Response.error();
   }
-  return network;
+  if (response.ok) {
+    try {
+      await cache.put(key, response.clone());
+    } catch {
+      // A full or unavailable cache keeps the old copy; the network answer is still returned.
+    }
+  }
+  return response;
 }
 
 self.addEventListener("fetch", (event) => {
   if (!isShellRequest(event.request)) {
     return;
   }
-  event.respondWith(staleWhileRevalidate(event));
+  event.respondWith(networkFirst(event));
 });
 
 // Push: the payload holds only kind, project, job, stage, version, previous, reason and count. The title comes from this fixed table,
