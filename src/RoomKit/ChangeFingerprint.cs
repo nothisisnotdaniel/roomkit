@@ -4,8 +4,9 @@ using System.Text;
 
 namespace RoomKit;
 
-/// <summary>One project's fingerprints in the <c>GET /api/changes</c> response.</summary>
-public sealed record ProjectChanges(string Backlog, string Stories);
+/// <summary>One project's fingerprints in the <c>GET /api/changes</c> response; <c>Claims</c> is over the project's
+/// <see cref="ClaimState"/> in the <see cref="ClaimWatcher"/>'s memory.</summary>
+public sealed record ProjectChanges(string Backlog, string Stories, string Claims);
 
 /// <summary>The <c>GET /api/changes</c> response: the jobs fingerprint and one entry per discovered project.</summary>
 public sealed record ChangesResponse(string Jobs, IReadOnlyDictionary<string, ProjectChanges> Projects);
@@ -33,8 +34,10 @@ public static class ChangeFingerprint
 
     /// <summary>Every fingerprint. With a <paramref name="worktree"/> whose folder exists for a project, that
     /// project's <c>backlog</c> and <c>stories</c> also cover the worktree's <c>backlog.md</c> and
-    /// <c>backlog/*.md</c> (<c>lstat</c> only, no git).</summary>
-    public static ChangesResponse Build(string factoryRoot, BacklogWorktree? worktree = null)
+    /// <c>backlog/*.md</c> (<c>lstat</c> only, no git). With <paramref name="claims"/> each project's <c>claims</c> is over
+    /// its claim state (memory only, no git), else over <see cref="ClaimState.None"/>.</summary>
+    public static ChangesResponse Build(
+        string factoryRoot, BacklogWorktree? worktree = null, ClaimWatcher? claims = null)
     {
         Dictionary<string, ProjectChanges> projects = new(StringComparer.Ordinal);
         foreach (ProjectFolder project in ProjectFinder.Find(factoryRoot))
@@ -42,9 +45,11 @@ public static class ChangeFingerprint
             ProjectFolder? copy = worktree is not null && worktree.Exists(project)
                 ? new ProjectFolder(project.Name, worktree.PathFor(project))
                 : null;
+            string claimPrint = Claims(claims?.State(project.Name) ?? ClaimState.None);
             projects[project.Name] = copy is null
-                ? new ProjectChanges(Backlog(project), Stories(project))
-                : new ProjectChanges(Combine(Backlog(project), Backlog(copy)), Combine(Stories(project), Stories(copy)));
+                ? new ProjectChanges(Backlog(project), Stories(project), claimPrint)
+                : new ProjectChanges(
+                    Combine(Backlog(project), Backlog(copy)), Combine(Stories(project), Stories(copy)), claimPrint);
         }
 
         return new ChangesResponse(Jobs(factoryRoot), projects);
@@ -63,6 +68,33 @@ public static class ChangeFingerprint
                 string name = format.RecordFileNames[index];
                 Append(text, index == 0 ? folder.Id : folder.Id + "/" + name, NoFollowStat.Of(Path.Combine(folder.Path, name)));
             }
+        }
+
+        return Hash(text);
+    }
+
+    /// <summary>Over a claim state: each claim's item, job, machine and claimed time, the stale flag and, while stale,
+    /// the checked time (the badge shows its age then). A successful read that finds the same claims gives the same
+    /// value.</summary>
+    public static string Claims(ClaimState state)
+    {
+        StringBuilder text = new();
+        foreach (ItemClaim claim in state.Claims)
+        {
+            text.Append(claim.Item.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append('\0');
+            foreach (string? value in new[] { claim.Job, claim.Machine, claim.Claimed })
+            {
+                text.Append(value is null ? "-" : value.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + value)
+                    .Append('\0');
+            }
+
+            text.Append('\n');
+        }
+
+        text.Append(state.Stale ? "stale" : "fresh");
+        if (state.Stale && state.Checked is DateTimeOffset checkedAt)
+        {
+            text.Append('\0').Append(checkedAt.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
         return Hash(text);

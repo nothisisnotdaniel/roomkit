@@ -55,6 +55,9 @@
   --status-open-fg: #0c4a6e;
   --status-user-bg: #f3e8ff;
   --status-user-fg: #581c87;
+  /* Another machine's claim on a backlog item (factory#54). */
+  --claim-bg: #ccfbf1;
+  --claim-fg: #115e59;
   /* The two counts on the Backlogs tab: the user's [h] tasks and the unapproved [?] items. */
   --count-tasks-bg: #6d28d9;
   --count-tasks-fg: #ffffff;
@@ -126,6 +129,8 @@
     --status-open-fg: #bae6fd;
     --status-user-bg: #3b1d57;
     --status-user-fg: #e9d5ff;
+    --claim-bg: #134e4a;
+    --claim-fg: #99f6e4;
     --count-tasks-bg: #c4b5fd;
     --count-tasks-fg: #1e1036;
     --count-approval-bg: #fdba74;
@@ -382,6 +387,24 @@ main {
 .badge-waiting {
   background: var(--waiting-bg);
   color: var(--waiting-fg);
+}
+
+/* Another machine's claim on a numbered row, after the category chip. Its text is long, so it wraps inside the row
+   on a narrow screen instead of pushing the row wider. */
+.claim-badge {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 6px;
+  margin: 2px 0 0 6px;
+  vertical-align: 1px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--claim-bg);
+  color: var(--claim-fg);
 }
 
 /* A story's category (job.py's Category: line). Each name has its own colour pair in light and dark mode; the chip

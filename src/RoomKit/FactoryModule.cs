@@ -9,7 +9,7 @@ namespace RoomKit;
 /// <see cref="BacklogWorktree"/> and the backlog write lock to the services, maps the backlogs, backlog change
 /// (<c>POST</c>), story, search, inbox, tasks, history and doctor endpoints, serves <c>edit.js</c>, <c>counts.js</c>,
 /// <c>search.js</c>, <c>capture.js</c>, <c>history.js</c>, <c>doctor.js</c> and <c>live.js</c>, and adds the job and
-/// backlog push source. It needs <see cref="RoomKitOptions.CaptureNote"/>. Without it none of these exist.</summary>
+/// backlog push source and the <see cref="ClaimWatcher"/> (other machines' item claims). It needs <see cref="RoomKitOptions.CaptureNote"/>. Without it none of these exist.</summary>
 public sealed class FactoryModule
 {
     /// <summary>The module's web files; an app without the module answers 404 for them.</summary>
@@ -45,7 +45,7 @@ public sealed class FactoryModule
     }
 
     /// <summary>The module's services: the root, the factory backlog, the write lock, the backlog worktrees next to
-    /// the token file and the job and backlog push source.</summary>
+    /// the token file, the job and backlog push source and the <see cref="ClaimWatcher"/>.</summary>
     internal static void AddServices(RoomServices services, string root, string dataFolder)
     {
         FactoryRoot factoryRoot = new(root);
@@ -54,6 +54,8 @@ public sealed class FactoryModule
         services.Services.AddSingleton(new BacklogWriteLock());
         services.Services.AddSingleton(new BacklogWorktree(dataFolder, UnixOwner.CurrentUser()));
         services.AddPushSource(new FactoryPushSource(factoryRoot));
+        services.Services.AddSingleton<ClaimWatcher>();
+        services.Services.AddHostedService(provider => provider.GetRequiredService<ClaimWatcher>());
     }
 
     /// <summary>Maps the module's endpoints.</summary>
