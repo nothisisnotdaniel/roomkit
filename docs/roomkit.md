@@ -37,6 +37,8 @@ The public types are few. Most of the code is `internal`. The public ones are:
 - Stories: `StoryMarkdown`, `StoryBlock` and `StoryInline`.
 - Projects and git: `ProjectFinder`, `ProjectFolder`, `ProjectGit` and `GitResult`.
 - Changes: `ChangeFingerprint`, `ChangesResponse` and `ProjectChanges`.
+- Other machines' item claims (#409): `ClaimWatcher` (a hosted service of the factory module that reads
+  `refs/factory/claims/*` from each repo's `origin` every 60 s, read-only), `ClaimState` and `ItemClaim`.
 - Safe file access: `SafeFileReader`, `SafeFileWriter`, `NoFollowStat`, `PathStat` and `PathKind`.
 
 ## Core

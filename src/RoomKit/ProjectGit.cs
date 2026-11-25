@@ -240,6 +240,111 @@ public static partial class ProjectGit
         return result.Ok && result.Output.Split('\n').Any(line => line.Trim() == "origin");
     }
 
+    /// <summary>The ref prefix of the item claims on <c>origin</c> (factory#54).</summary>
+    public const string ClaimsPrefix = "refs/factory/claims/";
+
+    /// <summary>Where <see cref="FetchClaims"/> stores the fetched claims in the repo.</summary>
+    public const string RemoteClaimsPrefix = "refs/factory/remote-claims/";
+
+    /// <summary>Every claim ref on <c>origin</c> as <c>(sha, ref name)</c> from the read-only
+    /// <c>git ls-remote origin refs/factory/claims/*</c>, keeping only lines whose sha is 40 or 64 lower-case hex;
+    /// <c>null</c> when the folder has no repo of its own, has no <c>origin</c> (checked first with
+    /// <c>git remote</c>) or git fails or times out.</summary>
+    public static async Task<IReadOnlyList<(string Sha, string Ref)>?> ClaimRefs(string folder)
+    {
+        if (!HasOwnRepo(folder) || !await HasOrigin(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(folder, ["ls-remote", "origin", ClaimsPrefix + "*"], Timeout);
+        if (!result.Ok)
+        {
+            return null;
+        }
+
+        List<(string Sha, string Ref)> refs = [];
+        foreach (string line in result.Output.Split('\n'))
+        {
+            int tab = line.IndexOf('\t', StringComparison.Ordinal);
+            if (tab <= 0)
+            {
+                continue;
+            }
+
+            string sha = line[..tab];
+            if (IsObjectId(sha))
+            {
+                refs.Add((sha, line[(tab + 1)..].TrimEnd('\r')));
+            }
+        }
+
+        return refs;
+    }
+
+    /// <summary>Fetches every claim from <c>origin</c> into <c>refs/factory/remote-claims/*</c>
+    /// (<c>git fetch --no-tags --quiet origin +refs/factory/claims/*:refs/factory/remote-claims/*</c>); false when
+    /// the folder has no repo of its own or <c>origin</c>, or git fails or times out. It never pushes.</summary>
+    public static async Task<bool> FetchClaims(string folder)
+    {
+        if (!HasOwnRepo(folder) || !await HasOrigin(folder))
+        {
+            return false;
+        }
+
+        GitResult result = await Run(
+            folder,
+            ["fetch", "--no-tags", "--quiet", "origin", "+" + ClaimsPrefix + "*:" + RemoteClaimsPrefix + "*"],
+            Timeout);
+        return result.Ok;
+    }
+
+    /// <summary>The size in bytes of a fetched object (<c>git cat-file -s &lt;sha&gt;</c>), or <c>null</c> when the
+    /// sha is not 40 or 64 lower-case hex, the object is missing or git fails or times out.</summary>
+    public static async Task<long?> ObjectSize(string folder, string sha)
+    {
+        if (!IsObjectId(sha) || !HasOwnRepo(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(folder, ["cat-file", "-s", sha], Timeout);
+        if (!result.Ok)
+        {
+            return null;
+        }
+
+        return long.TryParse(
+            result.Output.Trim(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out long size)
+            ? size
+            : null;
+    }
+
+    /// <summary>The message of a fetched commit (<c>git log -1 --format=%B &lt;sha&gt;</c>), or <c>null</c> when the
+    /// sha is not 40 or 64 lower-case hex or git fails or times out.</summary>
+    public static async Task<string?> CommitMessage(string folder, string sha)
+    {
+        if (!IsObjectId(sha) || !HasOwnRepo(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(folder, ["log", "-1", "--format=%B", sha], Timeout);
+        return result.Ok ? result.Output : null;
+    }
+
+    /// <summary>True when the text is a full object id: exactly 40 or 64 lower-case hex characters (so it never starts
+    /// with <c>-</c>).</summary>
+    public static bool IsObjectId(string? text)
+    {
+        return text is not null && ObjectIdPattern().IsMatch(text);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(
+        @"\A([0-9a-f]{40}|[0-9a-f]{64})\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ObjectIdPattern();
+
     public static async Task<bool> Push(string folder)
     {
         GitResult result = await Run(folder, ["push", "-q", "origin", Branch], PushTimeout);

@@ -72,7 +72,8 @@ function setConnectionLost(lost) {
   }
 }
 
-// The response as { jobs, projects: Map(name -> { backlog, stories }) }, or null when it has another shape.
+// The response as { jobs, projects: Map(name -> { backlog, stories, claims }) }, or null when it has another shape.
+// claims (other machines' item claims) is "" when the server sends none.
 function readChanges(data) {
   if (!data || typeof data.jobs !== "string" || !data.projects || typeof data.projects !== "object"
     || Array.isArray(data.projects)) {
@@ -80,10 +81,11 @@ function readChanges(data) {
   }
   const projects = new Map();
   for (const [name, value] of Object.entries(data.projects)) {
-    if (!value || typeof value.backlog !== "string" || typeof value.stories !== "string") {
+    if (!value || typeof value.backlog !== "string" || typeof value.stories !== "string"
+      || (value.claims !== undefined && typeof value.claims !== "string")) {
       return null;
     }
-    projects.set(name, { backlog: value.backlog, stories: value.stories });
+    projects.set(name, { backlog: value.backlog, stories: value.stories, claims: value.claims || "" });
   }
   return { jobs: data.jobs, projects: projects };
 }
@@ -176,6 +178,10 @@ function noteChanges(next, recovered) {
     } else if (before.stories !== after.stories) {
       staleStories.add(name);
       searchChanged = true;
+    }
+    // Another machine's claims changed: the section is fetched again, like a changed backlog.
+    if (!backlogChanged && before.claims !== after.claims) {
+      staleBacklogs.add(name);
     }
   }
 }
