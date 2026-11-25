@@ -74,7 +74,7 @@ const UpdateFailedBodies = {
   bootstrap_failed: "The new version couldn't be started, so the old one is back.",
   rollback_failed: "The old version didn't restart. Check the computer running the server.",
 };
-const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
+const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\.[0-9a-f]{32})?$/;
 const PushVersionPattern = /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z-]{1,40}(\.[0-9A-Za-z-]{1,40}){0,9})?$/;
 
 function pushField(data, name) {
