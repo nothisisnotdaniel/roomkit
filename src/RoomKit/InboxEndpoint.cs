@@ -127,7 +127,8 @@ internal static partial class InboxEndpoint
 
     public static bool IsJobId(string id)
     {
-        if (!JobId().IsMatch(id))
+        // The longest valid id: MaxJobLength characters, then "." and 32 hex characters.
+        if (id.Length > MaxJobLength + 33 || !JobId().IsMatch(id))
         {
             return false;
         }
