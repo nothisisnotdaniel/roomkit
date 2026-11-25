@@ -299,6 +299,21 @@ public static partial class ProjectGit
         return result.Ok;
     }
 
+    /// <summary>The type of a fetched object (<c>git cat-file -t &lt;sha&gt;</c>: <c>commit</c>, <c>tag</c>, <c>tree</c> or
+    /// <c>blob</c>), or <c>null</c> when the sha is not 40 or 64 lower-case hex, the object is missing or git fails or
+    /// times out. A claim is read only from a <c>commit</c>, so the object whose size is checked is the one whose message
+    /// is read (an annotated tag would be peeled by <c>log</c>).</summary>
+    public static async Task<string?> ObjectType(string folder, string sha)
+    {
+        if (!IsObjectId(sha) || !HasOwnRepo(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(folder, ["cat-file", "-t", sha], Timeout);
+        return result.Ok ? result.Output.Trim() : null;
+    }
+
     /// <summary>The size in bytes of a fetched object (<c>git cat-file -s &lt;sha&gt;</c>), or <c>null</c> when the
     /// sha is not 40 or 64 lower-case hex, the object is missing or git fails or times out.</summary>
     public static async Task<long?> ObjectSize(string folder, string sha)

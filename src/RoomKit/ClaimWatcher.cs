@@ -231,9 +231,21 @@ public sealed partial class ClaimWatcher : IHostedService, IDisposable
     }
 
     /// <summary>The claim of a fetched commit, with unknown fields when its message is over
-    /// <see cref="MaxMessageBytes"/>; <c>null</c> when git fails.</summary>
+    /// <see cref="MaxMessageBytes"/> or the ref points at anything but a commit (a tag, tree or blob is never read,
+    /// so a tag can't bring in a large peeled message); <c>null</c> when git fails.</summary>
     private static async Task<ItemClaim?> ReadClaim(string folder, int item, string sha)
     {
+        string? type = await ProjectGit.ObjectType(folder, sha);
+        if (type is null)
+        {
+            return null;
+        }
+
+        if (type != "commit")
+        {
+            return new ItemClaim(item, null, null, null);
+        }
+
         long? size = await ProjectGit.ObjectSize(folder, sha);
         if (size is null)
         {
