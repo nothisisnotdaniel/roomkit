@@ -15,7 +15,9 @@ internal sealed record PushPayload(
     int? Count = null,
     string? Version = null,
     string? Previous = null,
-    string? Code = null)
+    string? Code = null,
+    string? Title = null,
+    string? Tag = null)
 {
     public const string NeedsHuman = "needs-human";
 
@@ -62,7 +64,8 @@ internal sealed record PushPayload(
     /// <summary>The JSON body: <c>kind</c>, <c>project</c>, <c>job</c>, <c>stage</c> (each left out when
     /// unknown), <c>reason</c> and, for approvals, <c>count</c>. An update is exactly <c>kind</c>, <c>version</c> and
     /// <c>reason</c>; <c>updated</c> is exactly <c>kind</c>, <c>version</c>, <c>previous</c> and <c>reason</c>;
-    /// <c>update_failed</c> is exactly <c>kind</c>, <c>version</c> and the code as <c>reason</c>.</summary>
+    /// <c>update_failed</c> is exactly <c>kind</c>, <c>version</c> and the code as <c>reason</c>. An app's
+    /// <see cref="PushEvent"/> (with a title) is exactly <c>kind</c>, <c>title</c> and <c>tag</c>.</summary>
     public byte[] ToJson()
     {
         using MemoryStream stream = new();
@@ -70,6 +73,15 @@ internal sealed record PushPayload(
         {
             writer.WriteStartObject();
             writer.WriteString("kind", Kind);
+            if (Title is not null)
+            {
+                writer.WriteString("title", Title);
+                writer.WriteString("tag", Tag);
+                writer.WriteEndObject();
+                writer.Flush();
+                return stream.ToArray();
+            }
+
             if (Kind == Updated || Kind == UpdateFailed)
             {
                 writer.WriteString("version", Version);

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace RoomKit.Tests;
 
-/// <summary>Hosts the sample app in memory (no real port) like <c>ServerFactory</c>: <c>FactoryRoot</c> is the given
+/// <summary>Hosts the sample app in memory (no real port) like <c>ServerFactory</c>, with the factory module: <c>FactoryRoot</c> is the given
 /// temp root, the token file sits in its own temp folder (deleted on dispose), pushes go to <see cref="Push"/>, the
 /// update check to <see cref="Update"/>, and the clock is <see cref="Time"/>, whose timers never fire. Clients send
 /// <c>Host: 127.0.0.1:8201</c>.</summary>
@@ -30,8 +30,9 @@ internal sealed class SampleServerFactory : IAsyncDisposable
             ],
             error,
             SampleRoom.Options,
-            SampleRoom.Jobs,
             map ?? SampleRoom.Map,
+            null,
+            new FactoryModule(SampleRoom.Jobs),
             null,
             builder =>
             {

@@ -2,16 +2,18 @@ using System.Text.RegularExpressions;
 
 namespace RoomKit;
 
-/// <summary>The one app this process runs: its <see cref="RoomKitOptions"/> and <see cref="IJobFormat"/>, set by
-/// <see cref="RoomKitApp"/> before any command or server starts (tests set it once per test assembly). Reading it
-/// before it is set throws.</summary>
+/// <summary>The one app this process runs: its <see cref="RoomKitOptions"/> and, with <see cref="FactoryModule"/>, its
+/// <see cref="IJobFormat"/>, set by <see cref="RoomKitApp"/> before any command or server starts (tests set it once per
+/// test assembly). Reading it before it is set throws, and so does reading <see cref="Jobs"/> in a core-only
+/// app.</summary>
 internal static partial class RoomContext
 {
     private static Configured? current;
 
     public static RoomKitOptions Options => Current.Options;
 
-    public static IJobFormat Jobs => Current.Jobs;
+    public static IJobFormat Jobs =>
+        Current.Jobs ?? throw new InvalidOperationException("RoomKit has no job format: the app runs without FactoryModule.");
 
     /// <summary>The command prefix for the platform's executable or source checkout.</summary>
     public static string RunCommand => OperatingSystem.IsWindows()
@@ -28,12 +30,23 @@ internal static partial class RoomContext
     private static Configured Current =>
         Volatile.Read(ref current) ?? throw new InvalidOperationException("RoomKit is not configured.");
 
-    /// <summary>Checks the options and makes them (and the job format) the process's app.</summary>
+    /// <summary>Checks the options and makes them the process's core-only app: it has no job format, so reading
+    /// <see cref="Jobs"/> throws.</summary>
+    public static void Use(RoomKitOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        Check(options);
+        Volatile.Write(ref current, new Configured(options, null));
+    }
+
+    /// <summary>Checks the options (with the factory module's <see cref="RoomKitOptions.CaptureNote"/>) and makes them
+    /// and the job format the process's app.</summary>
     public static void Use(RoomKitOptions options, IJobFormat jobs)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(jobs);
         Check(options);
+        CheckFactory(options);
         Check(jobs);
         Volatile.Write(ref current, new Configured(options, jobs));
     }
@@ -71,7 +84,18 @@ internal static partial class RoomContext
             throw new ArgumentException("ReleaseRepository must be owner/name.", nameof(options));
         }
 
-        if (string.IsNullOrWhiteSpace(options.CaptureNote) || options.CaptureNote.Any(char.IsControl))
+        if (options.CaptureNote is not null && !IsOneLine(options.CaptureNote))
+        {
+            throw new ArgumentException("CaptureNote must be one line of text.", nameof(options));
+        }
+    }
+
+    /// <summary>Throws <see cref="ArgumentException"/> when an option the factory module needs is missing: the
+    /// <see cref="RoomKitOptions.CaptureNote"/> a captured draft gets.</summary>
+    public static void CheckFactory(RoomKitOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.CaptureNote is null || !IsOneLine(options.CaptureNote))
         {
             throw new ArgumentException("CaptureNote must be one line of text.", nameof(options));
         }
@@ -99,6 +123,11 @@ internal static partial class RoomContext
         }
     }
 
+    private static bool IsOneLine(string text)
+    {
+        return !string.IsNullOrWhiteSpace(text) && !text.Any(char.IsControl);
+    }
+
     [GeneratedRegex(@"\A[A-Za-z0-9.-]{1,64}\z", RegexOptions.CultureInvariant)]
     private static partial Regex NamePattern();
 
@@ -108,5 +137,5 @@ internal static partial class RoomContext
     [GeneratedRegex(@"\A[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*\z", RegexOptions.CultureInvariant)]
     private static partial Regex FolderPattern();
 
-    private sealed record Configured(RoomKitOptions Options, IJobFormat Jobs);
+    private sealed record Configured(RoomKitOptions Options, IJobFormat? Jobs);
 }
