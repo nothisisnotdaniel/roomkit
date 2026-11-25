@@ -142,7 +142,11 @@ declare:
   worker's notification texts.
 
 `index.html` loads `<script src="/room.js" defer></script>` as its first script, and `sw.js` starts with
-`importScripts("/room.js");`. Raise `CacheVersion` whenever a shell file changes.
+`importScripts("/room.js");`. The service worker loads shell files network-first (`fetch` with `cache: "no-cache"`;
+the cached copy only when the network fails), so a changed file reaches the app on its next load. Install
+pre-caches the shell past the HTTP cache and calls `skipWaiting()`; activate deletes every other cache and calls
+`clients.claim()`. Raise `CacheVersion` whenever a shell file changes, so old caches are dropped; ControlRoom's
+`ShellCacheLedger` test fails the build when the shell changed without it.
 
 ## Scripts
 
