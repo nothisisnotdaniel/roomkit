@@ -1,22 +1,21 @@
 namespace RoomKit;
 
-/// <summary>Watches the factory root for things the user should hear about and sends a push for each: a job that
-/// moves into a blocked stage (<see cref="IJobFormat.BlockedStages"/>, kind <c>needs-human</c>) (<c>merge-conflict</c> when its note starts with "merge conflict"), <c>ci.status</c>
-/// becoming <c>failure</c>, a job moving into the done stage (only with <c>notifyDone</c>), new <c>[?]</c> lines in a
-/// project and a new updater result (<c>updated</c>/<c>update_failed</c>, only with <c>notifyUpdate</c>).
-/// <see cref="Scan"/> runs every 30 s on the <see cref="TimeProvider"/>; the first scan only records a baseline for
-/// jobs and backlogs, while an updater result whose <c>run</c> differs from <c>updateResultNotified</c> is handled on
-/// every scan, the first one too. A job or backlog that can't be read keeps its last known state, and <c>[?]</c>
-/// lines once seen stay seen, so no event is sent twice.</summary>
+/// <summary>The core push service: on every scan it asks each registered <see cref="IPushSource"/> for its new events,
+/// handles a new updater result (<c>updated</c>/<c>update_failed</c>, only with <c>notifyUpdate</c>) and sends one push
+/// per event and subscription through <see cref="PushSender"/> (a <c>done</c> event only with <c>notifyDone</c>).
+/// <see cref="Scan"/> runs every 30 s on the <see cref="TimeProvider"/>; an updater result whose <c>run</c> differs
+/// from <c>updateResultNotified</c> is handled on every scan, the first one too. A source that throws loses its events
+/// of that scan and only a fixed text is logged; the other sources' events are still sent. The
+/// <see cref="FactoryRoot"/> constructor watches the factory through <see cref="FactoryPushSource"/>.</summary>
 internal sealed class PushWatcher : IHostedService, IDisposable
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 
     /// <summary>Stages a payload may name (the format's <see cref="IJobFormat.Stages"/>); any other value from a file
     /// is left out.</summary>
-    public static IReadOnlySet<string> KnownStages => new HashSet<string>(RoomContext.Jobs.Stages, StringComparer.Ordinal);
+    public static IReadOnlySet<string> KnownStages => FactoryPushSource.KnownStages;
 
-    private readonly string factoryRoot;
+    private readonly IReadOnlyList<IPushSource> sources;
 
     private readonly PushStore store;
 
@@ -30,24 +29,29 @@ internal sealed class PushWatcher : IHostedService, IDisposable
 
     private readonly SemaphoreSlim scanning = new(1, 1);
 
-    private readonly Dictionary<string, JobState> jobs = new(StringComparer.Ordinal);
-
-    private readonly Dictionary<string, HashSet<string>> approvals = new(StringComparer.Ordinal);
-
-    private bool baseline;
-
     private ITimer? timer;
 
+    /// <summary>Watches the factory root's jobs and backlogs (and the updater result).</summary>
     public PushWatcher(
         FactoryRoot root, PushStore store, PushSender sender, TimeProvider time, ILogger<PushWatcher> logger)
+        : this([new FactoryPushSource(root)], store, sender, time, logger)
     {
-        factoryRoot = root.Path;
+    }
+
+    /// <summary>Watches the given sources (and the updater result), in their order.</summary>
+    public PushWatcher(
+        IEnumerable<IPushSource> sources, PushStore store, PushSender sender, TimeProvider time, ILogger<PushWatcher> logger)
+    {
+        this.sources = [.. sources];
         this.store = store;
         this.sender = sender;
         results = new UpdateResultReader(store.Folder, store.Owner);
         this.time = time;
         this.logger = logger;
     }
+
+    /// <summary>The sources, in the order they are asked.</summary>
+    public IReadOnlyList<IPushSource> Sources => sources;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -67,14 +71,14 @@ internal sealed class PushWatcher : IHostedService, IDisposable
         scanning.Dispose();
     }
 
-    /// <summary>Reads the jobs and every project's <c>[?]</c> lines, compares them with the last scan and sends one
-    /// notification per new event. Returns the payloads it sent (or tried to send).</summary>
+    /// <summary>Asks every source for its new events, adds a new updater result and sends one notification per
+    /// event. Returns the payloads it sent (or tried to send).</summary>
     public async Task<IReadOnlyList<PushPayload>> Scan()
     {
         await scanning.WaitAsync();
         try
         {
-            List<PushPayload> events = Collect();
+            List<PushPayload> events = await Collect();
             UpdateResult? result = results.Read();
             if (events.Count == 0 && result is null)
             {
@@ -148,88 +152,24 @@ internal sealed class PushWatcher : IHostedService, IDisposable
         }
     }
 
-    /// <summary>Updates the remembered state and returns the events since the last scan (none on the
-    /// baseline).</summary>
-    private List<PushPayload> Collect()
+    /// <summary>Every source's events in source order; a failing source adds none.</summary>
+    private async Task<List<PushPayload>> Collect()
     {
         List<PushPayload> events = [];
-        HashSet<string> projects = new(ProjectFinder.Find(factoryRoot).Select(project => project.Name), StringComparer.Ordinal);
-        IJobFormat format = RoomContext.Jobs;
-        IReadOnlySet<string> knownStages = KnownStages;
-        foreach (RoomJob job in format.ReadAll(factoryRoot))
+        foreach (IPushSource source in sources)
         {
-            JobState now = new(job.Stage, job.CiStatus);
-            jobs.TryGetValue(job.Id, out JobState? before);
-            jobs[job.Id] = now;
-            if (!baseline)
+            try
             {
-                continue;
+                IReadOnlyList<PushEvent> found = await source.Collect(CancellationToken.None);
+                events.AddRange(found.Select(item => item.Payload));
             }
-
-            string? project = job.Project is not null && projects.Contains(job.Project) ? job.Project : null;
-            string? stage = job.Stage is not null && knownStages.Contains(job.Stage) ? job.Stage : null;
-            if (IsBlocked(format, job.Stage) && !IsBlocked(format, before?.Stage))
+            catch (Exception)
             {
-                bool conflict = job.Note is not null
-                    && job.Note.TrimStart().StartsWith("merge conflict", StringComparison.OrdinalIgnoreCase);
-                events.Add(new PushPayload(conflict ? PushPayload.MergeConflict : PushPayload.NeedsHuman, project, job.Id, stage));
-            }
-
-            if (job.CiStatus == "failure" && before?.CiStatus != "failure")
-            {
-                events.Add(new PushPayload(PushPayload.CiFailed, project, job.Id, stage));
-            }
-
-            if (job.Stage == format.DoneStage && before?.Stage != format.DoneStage)
-            {
-                events.Add(new PushPayload(PushPayload.Done, project, job.Id, stage));
+                // Never the exception's message: a source's text could hold paths or record text.
+                logger.LogWarning("Push source failed; its events are dropped");
             }
         }
 
-        foreach (ProjectFolder project in ProjectFinder.Find(factoryRoot))
-        {
-            Backlog? backlog = BacklogReader.Read(project);
-            if (backlog is null)
-            {
-                continue;
-            }
-
-            if (!approvals.TryGetValue(project.Name, out HashSet<string>? seen))
-            {
-                seen = new HashSet<string>(StringComparer.Ordinal);
-                approvals[project.Name] = seen;
-            }
-
-            int added = 0;
-            foreach (BacklogEntry entry in backlog.Approval)
-            {
-                if (seen.Add(Key(entry)))
-                {
-                    added++;
-                }
-            }
-
-            if (baseline && added > 0)
-            {
-                events.Add(new PushPayload(PushPayload.Approval, project.Name, null, null, added));
-            }
-        }
-
-        baseline = true;
         return events;
     }
-
-    /// <summary>True when the stage is one of the format's <see cref="IJobFormat.BlockedStages"/>.</summary>
-    private static bool IsBlocked(IJobFormat format, string? stage)
-    {
-        return stage is not null && format.BlockedStages.Contains(stage, StringComparer.Ordinal);
-    }
-
-    /// <summary>A line's identity: its number when it has one, else its text.</summary>
-    private static string Key(BacklogEntry entry)
-    {
-        return entry.Number is int number ? "#" + number : entry.Title + "\u0000" + entry.Rest;
-    }
-
-    private sealed record JobState(string? Stage, string? CiStatus);
 }

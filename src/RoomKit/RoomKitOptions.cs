@@ -1,7 +1,7 @@
 namespace RoomKit;
 
 /// <summary>The values that make a RoomKit server one app: its names, its data folder, the solution file that marks
-/// its repo, its port, its GitHub release repository and the note a captured draft gets. Checked by
+/// its repo, its port, its GitHub release repository and, for the factory module, the note a captured draft gets. Checked by
 /// <see cref="RoomKitApp"/> before anything starts.</summary>
 public sealed record RoomKitOptions
 {
@@ -26,8 +26,9 @@ public sealed record RoomKitOptions
     /// <summary>The GitHub <c>owner/name</c> whose releases the update check asks for.</summary>
     public required string ReleaseRepository { get; init; }
 
-    /// <summary>The dated note a captured draft story gets.</summary>
-    public required string CaptureNote { get; init; }
+    /// <summary>The dated note a captured draft story gets: one line of text. Needed only with
+    /// <see cref="FactoryModule"/> (which refuses a missing one); a core-only app may leave it out.</summary>
+    public string? CaptureNote { get; init; }
 
     /// <summary>The app assembly's informational version (<c>dev</c> when <c>null</c> or empty); RoomKit's own
     /// version is never used.</summary>

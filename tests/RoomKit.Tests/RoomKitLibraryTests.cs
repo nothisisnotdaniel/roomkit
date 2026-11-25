@@ -61,7 +61,7 @@ public sealed class RoomKitLibraryTests
         string docs = File.ReadAllText(Path.Combine(RepoCopy.RepoFolder(), "docs", "roomkit.md"));
         string[] sections =
         [
-            "What is in it", "Options", "Job format", "Web assets and tabs", "Scripts", "Feed and versioning",
+            "What is in it", "Core", "Factory module", "Options", "Job format", "Web assets and tabs", "Scripts", "Feed and versioning",
             "Plugging in an app",
         ];
         int last = -1;
@@ -86,6 +86,15 @@ public sealed class RoomKitLibraryTests
             docs,
             StringComparison.Ordinal);
         Assert.Contains("read:packages", docs, StringComparison.Ordinal);
+        Assert.Contains(
+            "- `TokenKey`: the localStorage key of the token. Changing it signs out every device.\n",
+            docs,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "- `CaptureProjectKey` and `HistoryProjectKey`: needed only with the factory module,",
+            docs,
+            StringComparison.Ordinal);
+        Assert.Contains("RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Map, new FactoryModule(MyRoomApp.Jobs))", docs, StringComparison.Ordinal);
     }
 
     [Fact]

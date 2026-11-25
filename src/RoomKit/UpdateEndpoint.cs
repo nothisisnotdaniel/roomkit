@@ -30,7 +30,7 @@ internal static class UpdateEndpoint
 
     public const string StoreError = "settings_store";
 
-    public static void Map(WebApplication app, string? tailnetHost, string factoryRoot)
+    public static void Map(WebApplication app, string? tailnetHost, string? factoryRoot)
     {
         app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (
             UpdateState state, RunningVersion running, UpdateSettingsStore settings, HttpContext context) =>

@@ -2,8 +2,9 @@
 
 RoomKit is the shared core of a factory control app. ControlRoom is built on it, and another factory's app
 (PlayRoom) can reference the packed library so that fixes to sign-in, push, updates and backlog editing reach both.
-An app supplies its names (`RoomKitOptions`), how its factory keeps jobs (`IJobFormat`), its own tabs and
-endpoints, and one small `room.js`. RoomKit does the rest.
+An app supplies its names (`RoomKitOptions`), its own tabs and endpoints, and one small `room.js`. RoomKit's
+core does the rest. An app that shows a factory's backlogs and jobs also passes a `FactoryModule` with how its
+factory keeps jobs (`IJobFormat`); an app without a factory (for example PRWatch) leaves it out.
 
 ## What is in it
 
@@ -11,18 +12,22 @@ endpoints, and one small `room.js`. RoomKit does the rest.
   tailnet host), listens on loopback only, allows a method only on its route (`POST` only on the fixed routes),
   puts the access token gate on every `/api/` path, sets the security headers and handles the `version` and
   `token` commands.
-- **Shared views and APIs:** backlogs and backlog editing (`/api/backlogs`, `/api/backlog/change`, worktree
+- **Core APIs:** push (subscribe, test, the push watcher and its sources), the update check and its settings,
+  `/health` and `/api/version` (see Core).
+- **Factory module APIs:** backlogs and backlog editing (`/api/backlogs`, `/api/backlog/change`, worktree
   edits while a job runs), stories, search, history and token totals, the Health view (`/api/doctor`), inbox,
-  tasks, push (subscribe, test, the job watcher), the update check and its settings, `/health` and `/api/version`.
-- **Web app shell:** `app.css`, the service worker `sw.js`, `token.js`, `push.js`, `edit.js`, `counts.js`,
-  `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`.
+  tasks and the job push source (see Factory module).
+- **Web app shell:** `app.css`, the service worker `sw.js`, `token.js` and `push.js`; with the factory module also
+  `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`.
 - **Scripts:** `scripts/launch-agent.sh` and `scripts/updater.sh` install and update macOS launch agents.
   `scripts/launch-agent.ps1` and `scripts/updater.ps1` install and update per-user Windows tasks.
 
 The public types are few. Most of the code is `internal`. The public ones are:
 
-- The plug-in API: `RoomKitApp`, `RoomKitOptions`, `IJobFormat`, `RoomJob`, `RoomJobFolder`, `RoomRoutes` and
-  `FactoryRoot` (the factory root an endpoint gets from the services).
+- The plug-in API: `RoomKitApp`, `RoomKitOptions`, `RoomRoutes`, `RoomServices` (the hook that adds services and
+  push sources before the host is built), `IPushSource` and `PushEvent` (an app's own push notifications).
+- The factory module: `FactoryModule`, `IJobFormat`, `RoomJob`, `RoomJobFolder` and `FactoryRoot` (the factory root
+  an endpoint gets from the services).
 - Backlog reading and editing that an app's own endpoints use: `Backlog`, `BacklogEntry`, `BacklogDependency`,
   `BacklogFile`, `BacklogReader`, `BacklogSource`, `BacklogEditor`, `BacklogEdit`, `AddPosition`,
   `MoveDirection`, `EditableText`, `BacklogWorktree`, `WorktreeState`, `ProjectBacklog`, `BacklogsEndpoint`,
@@ -33,6 +38,54 @@ The public types are few. Most of the code is `internal`. The public ones are:
 - Projects and git: `ProjectFinder`, `ProjectFolder`, `ProjectGit` and `GitResult`.
 - Changes: `ChangeFingerprint`, `ChangesResponse` and `ProjectChanges`.
 - Safe file access: `SafeFileReader`, `SafeFileWriter`, `NoFollowStat`, `PathStat` and `PathKind`.
+
+## Core
+
+Every RoomKit app gets the core, with no factory root, job format or git:
+
+- Kestrel on loopback only, the security headers (CSP, `nosniff`), the `Host` check (`421 {"error":"bad_host"}`),
+  the method rule (`POST` only on `/api/update/settings`, the four `/api/push/*` routes and the app's own
+  `RoomRoutes.MapPost` routes) and the `/api/` token gate (`401`), in that order on every request.
+- The static files `app.css`, `sw.js`, `token.js` and `push.js`, and the app's own `wwwroot`.
+- The `version` and `token` commands, `/health`, `/api/version`, the update check with `/api/update` and
+  `/api/update/settings`, and push (`/api/push`, subscribe, unsubscribe, settings, test).
+- The push watcher: every 30 s it asks each registered `IPushSource` for new `PushEvent`s and sends each one once
+  per subscription through RoomKit's push sender, and it always sends the updater's result (`updated`,
+  `update_failed`, with `notifyUpdate` on). A source that throws loses that scan's events; only a fixed text is
+  logged, never its message, and the other sources still send.
+
+An app registers a source in the `addServices` hook of `RoomKitApp.Run` or `RoomKitApp.Create`:
+
+```csharp
+return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Map,
+    addServices: services => services.AddPushSource(provider => new ReviewSource()));
+```
+
+A `PushEvent` has a kind (lower-case, 1 to 40 characters, not one of RoomKit's own kinds), a title and a tag (one
+line, at most 120 characters each); the device gets exactly `{"kind","title","tag"}`. The shipped `sw.js` shows the
+title from `PushAppTitles` by kind, else `PushFallbackTitle`.
+
+Without a `FactoryModule` there are no backlog, story, search, inbox, tasks, history or doctor endpoints (`404`,
+and `POST /api/backlog/change` is `405`), `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`,
+`doctor.js` and `live.js` are not served (`404`), no `worktrees` folder is made and `CaptureNote` is not needed.
+
+## Factory module
+
+`new FactoryModule(jobs)` checks the job format (a jobs folder that is not a plain relative path throws
+`ArgumentException`) and turns on the factory features when it is passed to `RoomKitApp.Run` or
+`RoomKitApp.Create`:
+
+- The factory root: `--FactoryRoot <path>`, else the parent of the folder holding `SolutionFileName`; without one
+  the app stops with a fixed text.
+- The services `FactoryRoot`, `FactoryBacklog`, `BacklogWorktree` (the `worktrees` folder next to the token file)
+  and the backlog write lock.
+- The endpoints `/api/backlogs`, `/api/backlog/change` (`POST`), `/api/story`, `/api/search`, `/api/inbox`,
+  `/api/tasks`, `/api/history` and `/api/doctor`.
+- The web files `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`.
+- The job and backlog push source: a job moving into a blocked stage, into the done stage (with `notifyDone`) and
+  a new `[?]` backlog line.
+
+The module needs `CaptureNote` (one line; missing or multi-line throws `ArgumentException`).
 
 ## Options
 
@@ -47,12 +100,12 @@ starts.
 | `SolutionFileName` | `ControlRoom.slnx` | the root locator: the factory root is the parent of the folder holding this file |
 | `DefaultPort` | `8100` | the port, bound to `127.0.0.1` only |
 | `ReleaseRepository` | `nothisisnotdaniel/controlroom` | the GitHub repository the update check asks |
-| `CaptureNote` | `Draft from ControlRoom` | the dated note on a captured draft story |
+| `CaptureNote` | `Draft from ControlRoom` | only with the factory module: the dated note on a captured draft story |
 | `InformationalVersion` | the app assembly's | `/health`, `/api/version` and the `version` command (`dev` when empty); RoomKit's own version is never used |
 
 ## Job format
 
-`IJobFormat` says how the factory keeps its jobs. The Health view, history, the push watcher and the change
+`IJobFormat` (factory module only) says how the factory keeps its jobs. The Health view, history, the push watcher and the change
 fingerprint read jobs only through it:
 
 - `JobsFolderPath`: the jobs folder relative to the factory root, for example `factory/jobs`.
@@ -77,8 +130,9 @@ The app's `wwwroot` holds `index.html` (its tabs), `manifest.webmanifest`, its i
 `room.js`. `room.js` is a classic script whose top-level `const`s the RoomKit scripts read as globals. It must
 declare:
 
-- `TokenKey`, `CaptureProjectKey` and `HistoryProjectKey`: the localStorage keys. Changing `TokenKey` signs out
-  every device.
+- `TokenKey`: the localStorage key of the token. Changing it signs out every device.
+- `CaptureProjectKey` and `HistoryProjectKey`: needed only with the factory module, the localStorage keys of the
+  Capture and History views.
 - `PushAppTexts` with `homeScreen` and `denied`: merged into the push texts.
 - `CacheVersion`, `CacheName` and `Shell`: the service worker's cache and the files it installs (list
   `/room.js` and every app file).
@@ -127,7 +181,7 @@ would need `packages: write`. The release asset needs no new secret or permissio
 ## Plugging in an app
 
 1. Create a `Microsoft.NET.Sdk.Web` project and reference the `RoomKit` package.
-2. Write the options and the job format:
+2. Write the options (and, for a factory app, the job format):
 
    ```csharp
    internal static class MyRoomApp
@@ -155,7 +209,9 @@ would need `packages: write`. The release asset needs no new secret or permissio
    }
    ```
 
-3. `Program.cs`: `return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Jobs, MyRoomApp.Map);`
+3. `Program.cs`: `return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Map, new FactoryModule(MyRoomApp.Jobs));`
+   for a factory app, or `return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Map);` for the core only
+   (then leave out `CaptureNote` and `Jobs`).
 4. Add `wwwroot/index.html`, `manifest.webmanifest`, the icons, the app's scripts and `room.js` (see Web assets
    and tabs).
 5. Copy the scripts for each supported platform and set the app assignments described under Scripts.

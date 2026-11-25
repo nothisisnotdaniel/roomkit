@@ -6,11 +6,14 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace RoomKit;
 
 /// <summary>The entry point of a RoomKit app. <see cref="Run"/> handles the <c>version</c> and <c>token</c> commands,
-/// then builds and runs the server; <see cref="Create"/> builds it: loopback-only Kestrel on the app's port,
-/// security headers, the <c>Host</c> check, GET/HEAD only (plus POST on RoomKit's backlog change, update settings
-/// and push routes and on the routes the app maps through <see cref="RoomRoutes.MapPost"/>), static files from the
-/// app's and RoomKit's <c>wwwroot</c>, an access token on every <c>/api/</c> request, RoomKit's APIs, the public
-/// <c>/health</c> route, the push watcher, the update check, and then the app's own endpoints.</summary>
+/// then builds and runs the server; <see cref="Create(string[], TextWriter, RoomKitOptions, Action{RoomRoutes},
+/// Action{ListenOptions}?, FactoryModule?, Action{RoomServices}?)"/> builds it. The core is always there: loopback-only
+/// Kestrel on the app's port, security headers, the <c>Host</c> check, GET/HEAD only (plus POST on the update settings
+/// and push routes, the module's routes and the routes the app maps through <see cref="RoomRoutes.MapPost"/>), static
+/// files from the app's and RoomKit's <c>wwwroot</c>, an access token on every <c>/api/</c> request, the public
+/// <c>/health</c> route, <c>/api/version</c>, the update check and its routes, push and its routes, and then the app's
+/// own endpoints. The factory features (backlogs, stories, search, inbox, tasks, history, doctor, their web files and
+/// the job and backlog push source) come only with a <see cref="FactoryModule"/>.</summary>
 public static class RoomKitApp
 {
     /// <summary>The policy every response carries.</summary>
@@ -28,19 +31,24 @@ public static class RoomKitApp
     /// <summary>The ASP.NET category that logs every request with its URL (and so its <c>Host</c>).</summary>
     private const string RequestLogCategory = "Microsoft.AspNetCore.Hosting.Diagnostics";
 
-    /// <summary>The POST routes of RoomKit itself.</summary>
-    private static readonly string[] KitPostRoutes =
+    /// <summary>The POST routes of RoomKit's core.</summary>
+    private static readonly string[] CorePostRoutes =
     [
-        BacklogChangeEndpoint.Route,
         UpdateEndpoint.SettingsRoute,
         .. PushEndpoint.PostRoutes,
     ];
 
     /// <summary>Runs the app: <c>version</c> and <c>token</c> commands print and return; otherwise the server runs
-    /// until it is stopped. Returns the process exit code.</summary>
-    public static int Run(string[] args, RoomKitOptions options, IJobFormat jobs, Action<RoomRoutes> mapApp)
+    /// until it is stopped. Returns the process exit code. <paramref name="factory"/> adds the factory features;
+    /// <paramref name="addServices"/> runs before the host is built (for example to add push sources).</summary>
+    public static int Run(
+        string[] args,
+        RoomKitOptions options,
+        Action<RoomRoutes> mapApp,
+        FactoryModule? factory = null,
+        Action<RoomServices>? addServices = null)
     {
-        RoomContext.Use(options, jobs);
+        UseContext(options, factory);
         if (VersionCommand.IsCommand(args))
         {
             return VersionCommand.Run(args, Console.Out, Console.Error);
@@ -51,7 +59,7 @@ public static class RoomKitApp
             return TokenCommand.Run(args, Console.Out, Console.Error);
         }
 
-        WebApplication? app = Create(args, Console.Error, options, jobs, mapApp);
+        WebApplication? app = Create(args, Console.Error, options, mapApp, null, factory, addServices);
         if (app is null)
         {
             return 1;
@@ -61,47 +69,51 @@ public static class RoomKitApp
         return 0;
     }
 
-    /// <summary>Builds the app, or returns <c>null</c> after writing a fixed error text when there is no factory
-    /// root, the <c>TailnetHost</c> name is not valid or the access token file is not safe. A missing token file is
-    /// created (the token itself is never written to <paramref name="error"/>). <paramref name="onListen"/> is a test
-    /// seam called for every endpoint Kestrel listens on (through the public <c>ConfigureEndpointDefaults</c>);
-    /// <c>null</c> in production.</summary>
+    /// <summary>Builds the app, or returns <c>null</c> after writing a fixed error text when the
+    /// <c>TailnetHost</c> name is not valid, the access token file is not safe or, with <paramref name="factory"/>,
+    /// there is no factory root. A missing token file is created (the token itself is never written to
+    /// <paramref name="error"/>). <paramref name="onListen"/> is a test seam called for every endpoint Kestrel listens
+    /// on (through the public <c>ConfigureEndpointDefaults</c>); <c>null</c> in production. <paramref name="factory"/>
+    /// adds the factory features; <paramref name="addServices"/> runs before the host is built.</summary>
     public static WebApplication? Create(
         string[] args,
         TextWriter error,
         RoomKitOptions options,
-        IJobFormat jobs,
         Action<RoomRoutes> mapApp,
-        Action<ListenOptions>? onListen = null)
+        Action<ListenOptions>? onListen = null,
+        FactoryModule? factory = null,
+        Action<RoomServices>? addServices = null)
     {
-        return Create(args, error, options, jobs, mapApp, onListen, configure: null);
+        return Create(args, error, options, mapApp, onListen, factory, addServices, configure: null);
     }
 
-    /// <summary>As the public <see cref="Create(string[], TextWriter, RoomKitOptions, IJobFormat, Action{RoomRoutes},
-    /// Action{ListenOptions}?)"/>; <paramref name="configure"/> is a test seam run on the builder after RoomKit's
-    /// services are added and before the static web assets are loaded (for example an in-memory server, fakes and the
-    /// environment).</summary>
+    /// <summary>As the public <see cref="Create(string[], TextWriter, RoomKitOptions, Action{RoomRoutes},
+    /// Action{ListenOptions}?, FactoryModule?, Action{RoomServices}?)"/>; <paramref name="configure"/> is a test seam run
+    /// on the builder after RoomKit's services are added and before the static web assets are loaded (for example an
+    /// in-memory server, fakes and the environment).</summary>
     internal static WebApplication? Create(
         string[] args,
         TextWriter error,
         RoomKitOptions options,
-        IJobFormat jobs,
         Action<RoomRoutes> mapApp,
         Action<ListenOptions>? onListen,
+        FactoryModule? factory,
+        Action<RoomServices>? addServices,
         Action<WebApplicationBuilder>? configure)
     {
         ArgumentNullException.ThrowIfNull(error);
         ArgumentNullException.ThrowIfNull(mapApp);
-        RoomContext.Use(options, jobs);
+        UseContext(options, factory);
 
-        // Content root (and so wwwroot) is the server's own output folder, never the current directory.
-        string[]? launchArgs = FactoryRootLocator.DecodeScheduledArguments(args);
+        // The scheduler's factory root argument is the module's; a core-only app takes its arguments as they are.
+        string[]? launchArgs = factory is null ? args : FactoryRootLocator.DecodeScheduledArguments(args);
         if (launchArgs is null)
         {
             error.WriteLine(FactoryRootLocator.NotFoundText);
             return null;
         }
 
+        // Content root (and so wwwroot) is the server's own output folder, never the current directory.
         WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             Args = launchArgs,
@@ -109,11 +121,14 @@ public static class RoomKitApp
             WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
         });
 
-        string? root = FactoryRootLocator.Resolve(builder.Configuration["FactoryRoot"], AppContext.BaseDirectory);
-        if (root is null)
+        string? root = null;
+        if (factory is not null)
         {
-            error.WriteLine(FactoryRootLocator.NotFoundText);
-            return null;
+            root = FactoryModule.FindRoot(builder.Configuration, error);
+            if (root is null)
+            {
+                return null;
+            }
         }
 
         string? tailnetHost = builder.Configuration[HostCheck.ConfigKey];
@@ -156,10 +171,15 @@ public static class RoomKitApp
 
             ConfigureKestrel(kestrel);
         });
-        builder.Services.AddSingleton(new FactoryRoot(root));
-        builder.Services.AddSingleton(new FactoryBacklog(root, builder.Configuration[FactoryBacklog.ConfigKey]));
-        builder.Services.AddSingleton(new BacklogWriteLock());
-        AddPush(builder, tokenPath);
+        string dataFolder = Path.GetDirectoryName(Path.GetFullPath(tokenPath))!;
+        RoomServices services = new(builder.Services, builder.Configuration);
+        if (factory is not null && root is not null)
+        {
+            FactoryModule.AddServices(services, root, dataFolder);
+        }
+
+        AddPush(builder, dataFolder);
+        addServices?.Invoke(services);
         configure?.Invoke(builder);
 
         // RoomKit's web files are static web assets: a published app has them in its wwwroot, a built one finds them
@@ -197,22 +217,27 @@ public static class RoomKitApp
 
             await next(context);
         });
-        app.UseDefaultFiles();
-        app.UseStaticFiles(CreateStaticFileOptions());
-        BacklogsEndpoint.Map(app);
-        StoryEndpoint.Map(app);
-        InboxEndpoint.Map(app);
-        TasksEndpoint.Map(app);
-        HistoryEndpoint.Map(app);
-        DoctorEndpoint.Map(app);
-        SearchEndpoint.Map(app);
-        BacklogChangeEndpoint.Map(app);
+        if (factory is null)
+        {
+            // Without the module its web files are not served, in every environment and from every web root.
+            HiddenFileProvider webRoot = new(app.Environment.WebRootFileProvider, FactoryModule.WebFiles);
+            app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = webRoot });
+            app.UseStaticFiles(CreateStaticFileOptions(webRoot));
+        }
+        else
+        {
+            app.UseDefaultFiles();
+            app.UseStaticFiles(CreateStaticFileOptions(null));
+            FactoryModule.Map(app);
+        }
+
         PushEndpoint.Map(app);
         VersionEndpoint.Map(app);
         UpdateEndpoint.Map(app, tailnetHost, root);
         HealthEndpoint.Map(app);
         mapApp(new RoomRoutes(app, appPostRoutes));
-        postRoutes = KitPostRoutes.Concat(appPostRoutes).ToFrozenSet(StringComparer.Ordinal);
+        IEnumerable<string> kitPostRoutes = factory is null ? CorePostRoutes : [.. FactoryModule.PostRoutes, .. CorePostRoutes];
+        postRoutes = kitPostRoutes.Concat(appPostRoutes).ToFrozenSet(StringComparer.Ordinal);
         return app;
     }
 
@@ -225,23 +250,39 @@ public static class RoomKitApp
         options.Listen(ServerEndpoint.Address);
     }
 
-    /// <summary>The push store and the backlog worktrees folder next to the token file, the crypto (clock from the
-    /// container, subject from <c>PushSubject</c>), the real no-redirect transport, the watcher and the update
-    /// check.</summary>
-    private static void AddPush(WebApplicationBuilder builder, string tokenPath)
+    /// <summary>Makes the options (and the module's job format) the process's app.</summary>
+    private static void UseContext(RoomKitOptions options, FactoryModule? factory)
     {
-        string folder = Path.GetDirectoryName(Path.GetFullPath(tokenPath))!;
+        if (factory is null)
+        {
+            RoomContext.Use(options);
+        }
+        else
+        {
+            RoomContext.Use(options, factory.Jobs);
+        }
+    }
+
+    /// <summary>The push and update stores in the data folder next to the token file, the crypto (clock from the
+    /// container, subject from <c>PushSubject</c>), the real no-redirect transport, the watcher over every registered
+    /// <see cref="IPushSource"/> and the update check.</summary>
+    private static void AddPush(WebApplicationBuilder builder, string folder)
+    {
         string? subject = builder.Configuration["PushSubject"];
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(new PushStore(folder));
         builder.Services.AddSingleton(new UpdateSettingsStore(folder, UnixOwner.CurrentUser()));
-        builder.Services.AddSingleton(new BacklogWorktree(folder, UnixOwner.CurrentUser()));
         builder.Services.AddSingleton(_ => PushTransport.CreateDefault());
         builder.Services.AddSingleton(services => new PushCrypto(
             services.GetRequiredService<TimeProvider>(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, subject));
         builder.Services.AddSingleton<PushSender>();
         builder.Services.AddSingleton<PushTestLimiter>();
-        builder.Services.AddSingleton<PushWatcher>();
+        builder.Services.AddSingleton(services => new PushWatcher(
+            services.GetServices<IPushSource>(),
+            services.GetRequiredService<PushStore>(),
+            services.GetRequiredService<PushSender>(),
+            services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<ILogger<PushWatcher>>()));
         builder.Services.AddHostedService(services => services.GetRequiredService<PushWatcher>());
         builder.Services.AddSingleton(RunningVersion.Current);
         builder.Services.AddSingleton(new UpdateState());
@@ -311,12 +352,13 @@ public static class RoomKitApp
 
     /// <summary>Static files: <c>.webmanifest</c> as <c>application/manifest+json</c>, and the service worker
     /// revalidated on every load.</summary>
-    private static StaticFileOptions CreateStaticFileOptions()
+    private static StaticFileOptions CreateStaticFileOptions(Microsoft.Extensions.FileProviders.IFileProvider? webRoot)
     {
         FileExtensionContentTypeProvider contentTypes = new();
         contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
         return new StaticFileOptions
         {
+            FileProvider = webRoot,
             ContentTypeProvider = contentTypes,
             OnPrepareResponse = context =>
             {
