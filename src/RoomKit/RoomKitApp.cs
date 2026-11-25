@@ -157,6 +157,7 @@ public static class RoomKitApp
             ConfigureKestrel(kestrel);
         });
         builder.Services.AddSingleton(new FactoryRoot(root));
+        builder.Services.AddSingleton(new FactoryBacklog(root, builder.Configuration[FactoryBacklog.ConfigKey]));
         builder.Services.AddSingleton(new BacklogWriteLock());
         AddPush(builder, tokenPath);
         configure?.Invoke(builder);

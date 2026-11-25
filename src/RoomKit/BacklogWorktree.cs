@@ -71,7 +71,9 @@ public sealed class BacklogWorktree
     /// a symlink, <c>backlog</c> created from develop when missing, stale registrations pruned, the worktree added
     /// when its folder is missing, then checked against <c>git worktree list --porcelain</c> and
     /// <c>branch --show-current</c>, and fast-forwarded to develop when <c>backlog</c> has nothing of its own.</summary>
-    public async Task<WorktreeState> Ensure(ProjectFolder project)
+    /// <paramref name="gitPrefix"/> is the backlog's folder in the repo (<c>factory/</c> for the factory's own
+    /// backlog, else empty).
+    public async Task<WorktreeState> Ensure(ProjectFolder project, string gitPrefix = "")
     {
         string path;
         try
@@ -131,10 +133,96 @@ public sealed class BacklogWorktree
         if (ahead.Output.Trim() == "0"
             && !(await ProjectGit.Run(path, ["merge", "-q", "--ff-only", DevelopRef], ProjectGit.Timeout)).Ok)
         {
-            return await ProjectGit.BacklogIsClean(path) ? WorktreeState.Failed : WorktreeState.Dirty;
+            return await ProjectGit.BacklogIsClean(path, gitPrefix) ? WorktreeState.Failed : WorktreeState.Dirty;
         }
 
         return WorktreeState.Ready;
+    }
+
+    /// <summary>The worktree of the factory repo's <c>backlog</c> branch for a change while a factory job runs: the
+    /// worktree that already has <c>backlog</c> checked out (a real folder, fast-forwarded to develop when
+    /// <c>backlog</c> has nothing of its own), else this server's own <c>worktrees/factory</c> through
+    /// <see cref="Ensure"/>. <c>Path</c> is the worktree (the repo folder git runs in), <c>null</c> unless
+    /// <c>Ready</c>.</summary>
+    public async Task<(WorktreeState State, string? Path)> EnsureFactory(FactoryBacklog factory)
+    {
+        string? found = await ForeignFactoryWorktree(factory);
+        if (found is null)
+        {
+            WorktreeState state = await Ensure(factory.Repo, FactoryBacklog.GitPrefix);
+            return (state, state == WorktreeState.Ready ? PathFor(factory.Repo) : null);
+        }
+
+        if (NoFollowStat.Of(found).Kind != PathKind.Directory)
+        {
+            return (WorktreeState.Failed, null);
+        }
+
+        GitResult branch = await ProjectGit.Run(found, ["branch", "--show-current"], ProjectGit.Timeout);
+        GitResult ahead = await ProjectGit.Run(
+            factory.Root, ["rev-list", "--count", DevelopRef + ".." + BranchRef], ProjectGit.Timeout);
+        if (!branch.Ok || branch.Output.Trim() != BranchName || !ahead.Ok)
+        {
+            return (WorktreeState.Failed, null);
+        }
+
+        if (ahead.Output.Trim() == "0"
+            && !(await ProjectGit.Run(found, ["merge", "-q", "--ff-only", DevelopRef], ProjectGit.Timeout)).Ok)
+        {
+            return (await ProjectGit.BacklogIsClean(found, FactoryBacklog.GitPrefix)
+                ? WorktreeState.Failed
+                : WorktreeState.Dirty, null);
+        }
+
+        return (WorktreeState.Ready, found);
+    }
+
+    /// <summary>The worktree to read the factory backlog from while a factory job runs: the one that has
+    /// <c>backlog</c> checked out (or this server's own when it exists), but only when <c>backlog</c> has commits
+    /// develop lacks; else <c>null</c>.</summary>
+    public async Task<string?> FactoryPending(FactoryBacklog factory)
+    {
+        string? found = await ForeignFactoryWorktree(factory);
+        string? path = found ?? (Exists(factory.Repo) ? PathFor(factory.Repo) : null);
+        if (path is null || NoFollowStat.Of(path).Kind != PathKind.Directory)
+        {
+            return null;
+        }
+
+        GitResult result = await ProjectGit.Run(
+            factory.Root, ["rev-list", "--count", DevelopRef + ".." + BranchRef], ProjectGit.Timeout);
+        return result.Ok
+            && int.TryParse(result.Output.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int count)
+            && count > 0
+                ? path
+                : null;
+    }
+
+    /// <summary>A worktree of the factory repo with <c>backlog</c> checked out that is neither this server's own nor
+    /// the root checkout, or <c>null</c>.</summary>
+    private async Task<string?> ForeignFactoryWorktree(FactoryBacklog factory)
+    {
+        string? found = await factory.WorktreeOn(BranchRef);
+        if (found is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            // Never our own worktree, and never the root checkout itself (it is never written).
+            StringComparison comparison =
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            string real = RealPath(found);
+            string ours = System.IO.Path.Combine(RealPath(folder.Path), factory.Repo.Name);
+            return string.Equals(real, ours, comparison) || string.Equals(real, RealPath(factory.Root), comparison)
+                ? null
+                : found;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>True when the project's <c>git worktree list --porcelain</c> has <c>branch refs/heads/backlog</c>
@@ -167,7 +255,7 @@ public sealed class BacklogWorktree
 
     /// <summary>The path with every symlinked folder on it resolved (git records worktree paths that way), at most
     /// <see cref="MaxLinkDepth"/> links deep.</summary>
-    private static string RealPath(string path)
+    internal static string RealPath(string path)
     {
         string full = System.IO.Path.GetFullPath(path);
         string? root = System.IO.Path.GetPathRoot(full);
@@ -223,6 +311,27 @@ public static class BacklogSource
         }
 
         return sources;
+    }
+
+    /// <summary>Where the factory's own backlog is read and written (<see cref="FactoryBacklog"/>): the develop
+    /// worktree's <c>factory/</c>, or, while a factory job runs and <c>backlog</c> holds edits develop lacks, that
+    /// branch's worktree (<see cref="BacklogWorktree.FactoryPending"/>, <c>Pending</c> true); else the reason.</summary>
+    public static async Task<FactorySource> ForFactory(FactoryBacklog factory, BacklogWorktree worktree)
+    {
+        FactorySource develop = await factory.Develop();
+        if (develop.Reason is not null || !factory.JobRunning())
+        {
+            return develop;
+        }
+
+        string? pending = await worktree.FactoryPending(factory);
+        return pending is null
+            ? develop
+            : new FactorySource(
+                new ProjectFolder(FactoryBacklog.Name, System.IO.Path.Combine(pending, FactoryBacklog.Name)),
+                pending,
+                null,
+                true);
     }
 
     /// <summary>True when the source is the worktree rather than the project.</summary>
