@@ -198,8 +198,8 @@ public sealed class BacklogWorktree
                 : null;
     }
 
-    /// <summary>A worktree of the factory repo with <c>backlog</c> checked out that is not this server's own, or
-    /// <c>null</c>.</summary>
+    /// <summary>A worktree of the factory repo with <c>backlog</c> checked out that is neither this server's own nor
+    /// the root checkout, or <c>null</c>.</summary>
     private async Task<string?> ForeignFactoryWorktree(FactoryBacklog factory)
     {
         string? found = await factory.WorktreeOn(BranchRef);
@@ -210,9 +210,12 @@ public sealed class BacklogWorktree
 
         try
         {
+            // Never our own worktree, and never the root checkout itself (it is never written).
+            StringComparison comparison =
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            string real = RealPath(found);
             string ours = System.IO.Path.Combine(RealPath(folder.Path), factory.Repo.Name);
-            return string.Equals(RealPath(found), ours,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+            return string.Equals(real, ours, comparison) || string.Equals(real, RealPath(factory.Root), comparison)
                 ? null
                 : found;
         }
