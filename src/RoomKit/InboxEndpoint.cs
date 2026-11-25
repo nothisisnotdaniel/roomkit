@@ -26,6 +26,7 @@ internal static partial class InboxEndpoint
 {
     public const string Route = "/api/inbox";
 
+    /// <summary>Most characters of a job id before its optional <c>.</c> + 32 hex suffix.</summary>
     public const int MaxJobLength = 80;
 
     private const string NotesHeading = "## Notes";
@@ -126,7 +127,14 @@ internal static partial class InboxEndpoint
 
     public static bool IsJobId(string id)
     {
-        return id.Length <= MaxJobLength && JobId().IsMatch(id);
+        // The longest valid id: MaxJobLength characters, then "." and 32 hex characters.
+        if (id.Length > MaxJobLength + 33 || !JobId().IsMatch(id))
+        {
+            return false;
+        }
+
+        int dot = id.IndexOf('.', StringComparison.Ordinal);
+        return (dot < 0 ? id.Length : dot) <= MaxJobLength;
     }
 
     private static int JobNumber(string id)
@@ -134,6 +142,6 @@ internal static partial class InboxEndpoint
         return int.Parse(id[..id.IndexOf('-', StringComparison.Ordinal)], NumberStyles.None, CultureInfo.InvariantCulture);
     }
 
-    [GeneratedRegex(@"\A[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*(\.[0-9a-f]{32})?\z", RegexOptions.CultureInvariant)]
     private static partial Regex JobId();
 }
