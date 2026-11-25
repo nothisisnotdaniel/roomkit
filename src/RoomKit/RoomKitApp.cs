@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.FileProviders;
 
 namespace RoomKit;
 
@@ -352,7 +353,7 @@ public static class RoomKitApp
 
     /// <summary>Static files: <c>.webmanifest</c> as <c>application/manifest+json</c>, and the service worker
     /// revalidated on every load.</summary>
-    private static StaticFileOptions CreateStaticFileOptions(Microsoft.Extensions.FileProviders.IFileProvider? webRoot)
+    private static StaticFileOptions CreateStaticFileOptions(IFileProvider? webRoot)
     {
         FileExtensionContentTypeProvider contentTypes = new();
         contentTypes.Mappings[".webmanifest"] = "application/manifest+json";

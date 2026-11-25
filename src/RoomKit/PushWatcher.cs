@@ -165,7 +165,8 @@ internal sealed class PushWatcher : IHostedService, IDisposable
             }
             catch (Exception)
             {
-                // Never the exception's message: a source's text could hold paths or record text.
+                // Never the exception's message: a source's text could hold paths or record text. Cancellation is
+                // caught too while the token is CancellationToken.None; rethrow it once a real token is passed.
                 logger.LogWarning("Push source failed; its events are dropped");
             }
         }

@@ -43,6 +43,9 @@ internal sealed class HiddenFileProvider : IFileProvider
         return hidden.Contains(Normalize(subpath));
     }
 
+    /// <summary>Case, leading slashes and trailing dots and spaces are enough: the physical provider refuses <c>:</c>
+    /// (so no <c>::$DATA</c> stream alias), every hidden name fits 8.3 (so no short-name alias), and the files are
+    /// public shipped scripts, not secrets.</summary>
     private static string Normalize(string path)
     {
         return path.TrimStart('/', '\\').TrimEnd('.', ' ');
