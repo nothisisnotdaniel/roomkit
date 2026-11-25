@@ -53,6 +53,7 @@ const ChangeErrors = {
   write_failed: "Can't write the file. Nothing was changed.",
   push_failed: "Committed, but the push failed.",
   worktree_failed: "Could not prepare the backlog branch. Nothing was changed.",
+  no_worktree: "The factory's develop worktree is missing. Nothing was changed.",
   stop_line: "This backlog has more than one stop line, or one with other text. Fix backlog.md first.",
   unreachable: "Can't reach the server. Reload to see whether the change was saved.",
   notEditable: "This story can't be edited.",

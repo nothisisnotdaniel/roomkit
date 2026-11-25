@@ -27,11 +27,11 @@ internal static partial class StoryEndpoint
     public static void Map(WebApplication app)
     {
         app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], async (
-            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
+            FactoryRoot root, BacklogWorktree worktree, FactoryBacklog factory, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             StoryResponse? story = await Build(
-                root.Path, worktree, context.Request.Query["project"], context.Request.Query["number"]);
+                root.Path, worktree, context.Request.Query["project"], context.Request.Query["number"], factory);
             if (story is null)
             {
                 return Results.Content(NotFoundBody, "application/json", statusCode: StatusCodes.Status404NotFound);
@@ -41,10 +41,14 @@ internal static partial class StoryEndpoint
         });
     }
 
-    /// <summary>The story, read from the project's backlog source folder (<see cref="BacklogSource"/>), or
-    /// <c>null</c>.</summary>
+    /// <summary>The story, read from the project's backlog source folder (<see cref="BacklogSource"/>; for
+    /// <c>factory</c> its <see cref="BacklogSource.ForFactory"/> folder), or <c>null</c>.</summary>
     public static async Task<StoryResponse?> Build(
-        string factoryRoot, BacklogWorktree worktree, StringValues projectValue, StringValues numberValue)
+        string factoryRoot,
+        BacklogWorktree worktree,
+        StringValues projectValue,
+        StringValues numberValue,
+        FactoryBacklog? factory = null)
     {
         if (projectValue.Count != 1 || numberValue.Count != 1)
         {
@@ -58,14 +62,22 @@ internal static partial class StoryEndpoint
             return null;
         }
 
-        ProjectFolder? found = ProjectFinder.Find(factoryRoot)
-            .FirstOrDefault(folder => string.Equals(folder.Name, projectName, StringComparison.Ordinal));
-        if (found is null)
+        ProjectFolder? project;
+        if (factory is not null && string.Equals(projectName, FactoryBacklog.Name, StringComparison.Ordinal))
+        {
+            project = (await BacklogSource.ForFactory(factory, worktree)).Source;
+        }
+        else
+        {
+            ProjectFolder? found = ProjectFinder.Find(factoryRoot)
+                .FirstOrDefault(folder => string.Equals(folder.Name, projectName, StringComparison.Ordinal));
+            project = found is null ? null : await BacklogSource.For(found, worktree);
+        }
+
+        if (project is null)
         {
             return null;
         }
-
-        ProjectFolder project = await BacklogSource.For(found, worktree);
 
         Backlog? backlog = BacklogReader.Read(project);
         BacklogEntry? entry = backlog?.All.FirstOrDefault(line => line.Number == number);

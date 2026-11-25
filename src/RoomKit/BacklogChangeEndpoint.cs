@@ -42,6 +42,12 @@ internal sealed record BacklogChangeResponse(
 /// bytes (<c>null</c> deletes it) and the bytes before (<c>null</c> when it did not exist).</summary>
 internal sealed record FileChange(string RelativePath, string FullPath, byte[]? NewBytes, byte[]? OldBytes);
 
+/// <summary>Where a change goes: <c>Folder</c> holds <c>backlog.md</c> and <c>backlog/</c>, <c>Repo</c> is the
+/// worktree git runs in, <c>Prefix</c> the backlog folder's git path in it (<c>factory/</c> for the factory's own
+/// backlog, else empty) and <c>OnDevelop</c> whether it is <c>develop</c> (pushed when there is an
+/// <c>origin</c>).</summary>
+internal sealed record ChangeTarget(ProjectFolder Folder, string Repo, string Prefix, bool OnDevelop);
+
 /// <summary>What a change writes and commits, or the refusal (<c>Error</c> with its status).</summary>
 internal sealed record ChangePlan(
     IReadOnlyList<FileChange> Files,
@@ -101,6 +107,7 @@ internal static class BacklogChangeEndpoint
             FactoryRoot root,
             BacklogWriteLock writeLock,
             BacklogWorktree worktree,
+            FactoryBacklog factory,
             TimeProvider time,
             HttpContext context) =>
         {
@@ -112,11 +119,13 @@ internal static class BacklogChangeEndpoint
 
             byte[]? body = await ReadBody(context.Request);
             BacklogChangeRequest? request = body is null ? null : ParseRequest(body);
-            ProjectFolder? project = request is null
+            bool isFactory = request is not null
+                && string.Equals(request.Project, FactoryBacklog.Name, StringComparison.Ordinal);
+            ProjectFolder? project = request is null || isFactory
                 ? null
                 : ProjectFinder.Find(root.Path)
                     .FirstOrDefault(folder => string.Equals(folder.Name, request.Project, StringComparison.Ordinal));
-            if (request is null || project is null)
+            if (request is null || (project is null && !isFactory))
             {
                 return Error(StatusCodes.Status400BadRequest, Invalid);
             }
@@ -124,7 +133,12 @@ internal static class BacklogChangeEndpoint
             await writeLock.Gate.WaitAsync(context.RequestAborted);
             try
             {
-                return await Change(project, request, worktree, DateOnly.FromDateTime(time.GetLocalNow().DateTime));
+                (ChangeTarget? target, IResult? refused) = isFactory
+                    ? await FactoryTarget(factory, worktree)
+                    : await ProjectTarget(project!, worktree);
+                return target is null
+                    ? refused!
+                    : await Change(target, request, DateOnly.FromDateTime(time.GetLocalNow().DateTime));
             }
             finally
             {
@@ -133,37 +147,82 @@ internal static class BacklogChangeEndpoint
         });
     }
 
-    /// <summary>Checks, writes and commits one change. On <c>develop</c> it goes into the project checkout and is
-    /// pushed; on any other branch (or a detached HEAD) into the <see cref="BacklogWorktree"/>, never pushed. A
-    /// folder without its own repo is refused as <c>not_develop</c> first.</summary>
-    private static async Task<IResult> Change(
-        ProjectFolder checkout, BacklogChangeRequest request, BacklogWorktree worktree, DateOnly today)
+    /// <summary>Where a project's change goes. On <c>develop</c> into the project checkout (pushed); on any other
+    /// branch (or a detached HEAD) into the <see cref="BacklogWorktree"/>, never pushed. A folder without its own repo
+    /// is refused as <c>not_develop</c> first.</summary>
+    private static async Task<(ChangeTarget? Target, IResult? Error)> ProjectTarget(
+        ProjectFolder checkout, BacklogWorktree worktree)
     {
         string? branch = await ProjectGit.CurrentBranch(checkout.Path);
         if (branch is null)
         {
-            return Error(StatusCodes.Status409Conflict, NotDevelop);
+            return (null, Error(StatusCodes.Status409Conflict, NotDevelop));
         }
 
-        bool onDevelop = branch == ProjectGit.Branch;
-        ProjectFolder project = checkout;
-        if (!onDevelop)
+        if (branch == ProjectGit.Branch)
         {
-            WorktreeState state = await worktree.Ensure(checkout);
-            if (state == WorktreeState.Dirty)
-            {
-                return Error(StatusCodes.Status409Conflict, Dirty);
-            }
-
-            if (state != WorktreeState.Ready)
-            {
-                return Error(StatusCodes.Status500InternalServerError, WorktreeFailed);
-            }
-
-            project = new ProjectFolder(checkout.Name, worktree.PathFor(checkout));
+            return (new ChangeTarget(checkout, checkout.Path, "", true), null);
         }
 
-        if (!await ProjectGit.BacklogIsClean(project.Path))
+        WorktreeState state = await worktree.Ensure(checkout);
+        if (state == WorktreeState.Dirty)
+        {
+            return (null, Error(StatusCodes.Status409Conflict, Dirty));
+        }
+
+        if (state != WorktreeState.Ready)
+        {
+            return (null, Error(StatusCodes.Status500InternalServerError, WorktreeFailed));
+        }
+
+        string path = worktree.PathFor(checkout);
+        return (new ChangeTarget(new ProjectFolder(checkout.Name, path), path, "", false), null);
+    }
+
+    /// <summary>Where a change of the factory's own backlog goes (<see cref="FactoryBacklog"/>): refused with the
+    /// develop worktree's reason (<c>409 no_worktree|not_develop</c>) first; with no factory job running into the
+    /// develop worktree's <c>factory/</c> on <c>develop</c> (pushed); while one runs into a worktree of the local
+    /// <c>backlog</c> branch (<see cref="BacklogWorktree.EnsureFactory"/>), never pushed. The root checkout and
+    /// <c>main</c> are never written.</summary>
+    private static async Task<(ChangeTarget? Target, IResult? Error)> FactoryTarget(
+        FactoryBacklog factory, BacklogWorktree worktree)
+    {
+        FactorySource develop = await factory.Develop();
+        if (develop.Reason is not null)
+        {
+            return (null, Error(StatusCodes.Status409Conflict, develop.Reason));
+        }
+
+        if (!factory.JobRunning())
+        {
+            return (new ChangeTarget(develop.Source!, develop.Repo!, FactoryBacklog.GitPrefix, true), null);
+        }
+
+        (WorktreeState state, string? path) = await worktree.EnsureFactory(factory);
+        if (state == WorktreeState.Dirty)
+        {
+            return (null, Error(StatusCodes.Status409Conflict, Dirty));
+        }
+
+        if (state != WorktreeState.Ready || path is null)
+        {
+            return (null, Error(StatusCodes.Status500InternalServerError, WorktreeFailed));
+        }
+
+        return (new ChangeTarget(
+            new ProjectFolder(FactoryBacklog.Name, Path.Combine(path, FactoryBacklog.Name)),
+            path,
+            FactoryBacklog.GitPrefix,
+            false), null);
+    }
+
+    /// <summary>Checks, writes and commits one change in its target, and pushes it when the target is
+    /// <c>develop</c> and there is an <c>origin</c>.</summary>
+    private static async Task<IResult> Change(ChangeTarget target, BacklogChangeRequest request, DateOnly today)
+    {
+        ProjectFolder project = target.Folder;
+        bool onDevelop = target.OnDevelop;
+        if (!await ProjectGit.BacklogIsClean(target.Repo, target.Prefix))
         {
             return Error(StatusCodes.Status409Conflict, Dirty);
         }
@@ -192,7 +251,7 @@ internal static class BacklogChangeEndpoint
         }
 
         List<FileChange> applied = [];
-        string[] paths = plan.Files.Select(change => change.RelativePath).ToArray();
+        string[] paths = plan.Files.Select(change => target.Prefix + change.RelativePath).ToArray();
         bool createdFolder = false;
         try
         {
@@ -222,18 +281,18 @@ internal static class BacklogChangeEndpoint
             throw;
         }
 
-        if (!await ProjectGit.Commit(project.Path, plan.Message, paths))
+        if (!await ProjectGit.Commit(target.Repo, plan.Message, paths))
         {
             Restore(applied, project, createdFolder);
-            await ProjectGit.Unstage(project.Path, paths);
+            await ProjectGit.Unstage(target.Repo, paths);
             return Error(StatusCodes.Status500InternalServerError, CommitFailed);
         }
 
         bool pushed = false;
         string? warning = null;
-        if (onDevelop && await ProjectGit.HasOrigin(project.Path))
+        if (onDevelop && await ProjectGit.HasOrigin(target.Repo))
         {
-            pushed = await ProjectGit.Push(project.Path);
+            pushed = await ProjectGit.Push(target.Repo);
             warning = pushed ? null : PushFailed;
         }
 

@@ -204,11 +204,14 @@ public static partial class ProjectGit
     private static partial System.Text.RegularExpressions.Regex ReleaseTagPattern();
 
     /// <summary>True when <c>git status --porcelain -- backlog.md backlog</c> prints nothing (a failed call counts
-    /// as not clean).</summary>
-    public static async Task<bool> BacklogIsClean(string folder)
+    /// as not clean). <paramref name="prefix"/> is the backlog's folder in the repo (<c>factory/</c> for the factory's
+    /// own backlog, else empty).</summary>
+    public static async Task<bool> BacklogIsClean(string folder, string prefix = "")
     {
         GitResult result = await Run(
-            folder, ["status", "--porcelain", "--", BacklogReader.FileName, StoryReader.FolderName], Timeout);
+            folder,
+            ["status", "--porcelain", "--", prefix + BacklogReader.FileName, prefix + StoryReader.FolderName],
+            Timeout);
         return result.Ok && result.Output.Trim().Length == 0;
     }
 

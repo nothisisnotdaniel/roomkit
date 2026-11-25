@@ -27,6 +27,8 @@ The public types are few. Most of the code is `internal`. The public ones are:
   `BacklogFile`, `BacklogReader`, `BacklogSource`, `BacklogEditor`, `BacklogEdit`, `AddPosition`,
   `MoveDirection`, `EditableText`, `BacklogWorktree`, `WorktreeState`, `ProjectBacklog`, `BacklogsEndpoint`,
   `BacklogsResponse`, `PlanItem`, `PlanDependency` and `BlockedItem`.
+- The factory's own backlog in its develop worktree: `FactoryBacklog` (the folder from `FACTORY_DEVELOP_DIR`, else
+  `<root>-factory-develop`, checked against `git worktree list`) and `FactorySource` (where it is read, or why not).
 - Stories: `StoryMarkdown`, `StoryBlock` and `StoryInline`.
 - Projects and git: `ProjectFinder`, `ProjectFolder`, `ProjectGit` and `GitResult`.
 - Changes: `ChangeFingerprint`, `ChangesResponse` and `ProjectChanges`.
