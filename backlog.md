@@ -12,3 +12,4 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#3](backlog/003-keep-the-github-packages-token-off.md) Keep the GitHub Packages token off the nuget push command line → 434-nuget-token-off-cmdline.a2c01aa145d94d0b8d1c7dc4cce77c33
 - [ ] [#4](backlog/004-bring-the-accesstoken-and-projectgit-source.md) Bring the AccessToken and ProjectGit source-scan tests over from ControlRoom
 - [ ] [#5](backlog/005-let-host-apps-hook-into-job.md) Let host apps hook into job-count loads and live change checks
+- [h] [#6](backlog/006-release-roomkit-0-2-0-with.md) Release RoomKit 0.2.0 with the host hooks (after: #5)
