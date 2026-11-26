@@ -148,6 +148,28 @@ pre-caches the shell past the HTTP cache and calls `skipWaiting()`; activate del
 `clients.claim()`. Raise `CacheVersion` whenever a shell file changes, so old caches are dropped; ControlRoom's
 `ShellCacheLedger` test fails the build when the shell changed without it.
 
+## Host hooks
+
+With the factory module, `counts.js` declares the frozen `const roomKitHooks`, so a host app runs its own code at
+two points without patching RoomKit's scripts or replacing its globals. `roomKitHooks.on(name, fn)` registers `fn`
+for one of two names; any other name, or an `fn` that is not a function, throws a `TypeError` and registers nothing.
+There is no way to remove a hook.
+
+- `jobCounts`: after `loadJobCounts` has set new Jobs tab counts, `fn(jobs)` gets the board answer's `data.jobs`
+  array, the one the counts were taken from. Not called when the fetch fails, the answer has no jobs array, or the
+  answer is dropped for a newer request (and not for the counts `pollBoard` sets).
+- `liveChecked`: after each successful live check while the board views are shown (`boardViewsVisible()`), after
+  the changes are noted (`liveLast` holds the new answer) and before the shown views refresh,
+  `fn({ jobsChanged, recovered, firstCheck })`: `jobsChanged` is true when the jobs fingerprint differs from the
+  previous answer's, `recovered` when the check follows a lost connection, and `firstCheck` when there was no
+  previous answer. Not called when the check fails or is skipped (hidden page, token view, a check still pending).
+
+A name's hooks run in registration order, and each is awaited, so an async hook holds back the next hook and the
+view refresh until it settles. A hook that throws or rejects is caught and written once with `console.error`; the
+next hooks, the counts, `loadJobCounts`'s result and the live checks go on as before. Load the host script that
+registers hooks after `counts.js` (for example as a `defer` script after RoomKit's), and register at load time, so
+the hooks are in place before the first check. An app that registers none behaves as before.
+
 ## Scripts
 
 `scripts/launch-agent.sh` and `scripts/updater.sh` ship in the package under `scripts/`. Copy both into the app's

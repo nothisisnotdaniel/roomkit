@@ -12,6 +12,40 @@
 // "Jobs, 1 running, 2 blocked". fetchBoard and RunningStages come from board.js; pollBoard sets these counts from
 // every board answer it reads.
 
+// Host hooks (RoomKit #5): a host app's script, loaded after this one, registers its own code with
+// roomKitHooks.on(name, fn) for one of HostHookNames: "jobCounts" runs after loadJobCounts has set new counts (given
+// the board answer's jobs), "liveChecked" after each live check while the board views are shown (live.js, given
+// { jobsChanged, recovered, firstCheck }). A name's hooks run in registration order, each awaited; one that throws
+// or rejects is written to console.error and the next one runs. The registry is frozen and its list is closed over,
+// so no script can replace or reach it; runRoomKitHooks is only for counts.js and live.js.
+const HostHookNames = Object.freeze(["jobCounts", "liveChecked"]);
+
+const [roomKitHooks, runRoomKitHooks] = (() => {
+  const hooks = new Map(HostHookNames.map((name) => [name, []]));
+
+  function on(name, fn) {
+    if (typeof name !== "string" || !hooks.has(name)) {
+      throw new TypeError("roomKitHooks.on: unknown hook name");
+    }
+    if (typeof fn !== "function") {
+      throw new TypeError("roomKitHooks.on: the hook is not a function");
+    }
+    hooks.get(name).push(fn);
+  }
+
+  async function run(name, argument) {
+    for (const fn of [...hooks.get(name)]) {
+      try {
+        await fn(argument);
+      } catch (error) {
+        console.error("roomKitHooks: a " + name + " hook failed", error);
+      }
+    }
+  }
+
+  return [Object.freeze({ on: on }), run];
+})();
+
 const CountTexts = {
   task: " task",
   tasks: " tasks",
@@ -125,14 +159,16 @@ function setJobCounts(counts) {
 }
 
 // Fetches the board once for the counts; an older answer than the last request is dropped. Returns false when it
-// failed, so the live check tries again.
+// failed, so the live check tries again. After new counts are set, the "jobCounts" host hooks get the answer's jobs.
 async function loadJobCounts() {
   jobCountsRequest += 1;
   const request = jobCountsRequest;
   let counts;
+  let jobs;
   try {
     const data = JSON.parse(await fetchBoard());
-    counts = countJobs(data && data.jobs);
+    jobs = data && data.jobs;
+    counts = countJobs(jobs);
     if (counts === null) {
       throw new Error("data");
     }
@@ -146,6 +182,7 @@ async function loadJobCounts() {
   if (request === jobCountsRequest) {
     jobCounts = counts;
     showJobCounts();
+    await runRoomKitHooks("jobCounts", jobs);
   }
   return true;
 }
