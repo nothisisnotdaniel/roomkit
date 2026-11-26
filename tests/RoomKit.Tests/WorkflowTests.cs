@@ -169,7 +169,7 @@ public sealed partial class WorkflowTests
     {
         string run = PushRun(Workflow("release.yml"));
 
-        AssertInOrder(run, ["umask 077\n", "trap '", "mkdir -p \"$CONFIG_DIR\"\n", "<<'EOF'\n", "dotnet nuget push "]);
+        AssertInOrder(run, ["umask 077\n", "trap '", "mkdir \"$CONFIG_DIR\"\n", "<<'EOF'\n", "dotnet nuget push "]);
         string trap = Assert.Single(run.Split('\n'), line => line.TrimStart().StartsWith("trap ", StringComparison.Ordinal));
         Assert.Equal("          trap 'rm -rf \"$CONFIG_DIR\"' EXIT", trap);
     }
