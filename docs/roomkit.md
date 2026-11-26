@@ -9,7 +9,7 @@ factory keeps jobs (`IJobFormat`); an app without a factory (for example PRWatch
 ## What is in it
 
 - **Server:** `RoomKitApp` builds and runs the app. It does the `Host` check (only `127.0.0.1:<port>` and the
-  tailnet host), listens on loopback only, allows a method only on its route (`POST` only on the fixed routes),
+  tailnet host, plus `<tailnet host>:<TailnetPort>` when `--TailnetPort` is set), listens on loopback only, allows a method only on its route (`POST` only on the fixed routes),
   puts the access token gate on every `/api/` path, sets the security headers and handles the `version` and
   `token` commands.
 - **Core APIs:** push (subscribe, test, the push watcher and its sources), the update check and its settings,

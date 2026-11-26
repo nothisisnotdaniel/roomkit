@@ -139,6 +139,13 @@ public static class RoomKitApp
             return null;
         }
 
+        string? tailnetPort = builder.Configuration[HostCheck.PortConfigKey];
+        if (tailnetPort is not null && (tailnetHost is null || !HostCheck.IsValidTailnetPort(tailnetPort)))
+        {
+            error.WriteLine(HostCheck.InvalidTailnetPortText);
+            return null;
+        }
+
         string? configuredToken = builder.Configuration[AccessToken.ConfigKey];
         string tokenPath = AccessToken.ResolvePath(configuredToken);
         TokenFileRead token = AccessToken.Read(tokenPath);
@@ -197,7 +204,7 @@ public static class RoomKitApp
         {
             context.Response.Headers.ContentSecurityPolicy = ContentSecurityPolicy;
             context.Response.Headers.XContentTypeOptions = "nosniff";
-            if (!IsAllowedHost(context.Request, tailnetHost))
+            if (!IsAllowedHost(context.Request, tailnetHost, tailnetPort))
             {
                 await HostCheck.WriteRefused(context.Response);
                 return;
@@ -294,10 +301,10 @@ public static class RoomKitApp
 
     /// <summary>True when the request has exactly one <c>Host</c> value and <see cref="HostCheck.IsAllowed"/>
     /// accepts it. The value is never logged.</summary>
-    private static bool IsAllowedHost(HttpRequest request, string? tailnetHost)
+    private static bool IsAllowedHost(HttpRequest request, string? tailnetHost, string? tailnetPort)
     {
         Microsoft.Extensions.Primitives.StringValues values = request.Headers.Host;
-        return values.Count == 1 && HostCheck.IsAllowed(values[0], tailnetHost);
+        return values.Count == 1 && HostCheck.IsAllowed(values[0], tailnetHost, tailnetPort);
     }
 
     /// <summary>GET and HEAD everywhere; POST only on exactly one of <paramref name="postRoutes"/> (RoomKit's and
