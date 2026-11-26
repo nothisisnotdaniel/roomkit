@@ -15,7 +15,7 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   never open a real port or read the real factory root: they build temporary roots (`TempFactoryRoot`,
   `TempTokenFolder`) or a repo copy (`RepoCopy`), each in its own temp folder deleted on dispose. Work in another
   process (`dotnet pack`, `/bin/sh`, PowerShell) is awaited for its exit with a named, bounded timeout, never with
-  a delay. Script tests that need `/bin/sh` return early on Windows.
+  a delay. The login check tests are skipped on Windows or without `jq`.
 - **Layout:**
   - `RoomKit.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`,
     `.gitattributes` (LF everywhere), `.gitignore` (`bin/`, `obj/`).
@@ -25,7 +25,13 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   - `tests/RoomKit.Tests/`: the tests, the sample apps (`SampleRoom`, `CoreRoom`) and `Shared/` (fixtures:
     `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData`, `RepoCopy`, `WindowsReleaseFixture` and
     its `.ps1`). `WorkflowTests` reads the two workflows as text, `ReleaseVersionScriptTests` runs the release
-    script, `RepoDocsTests` checks this file and `docs/roomkit.md`.
+    script, `PushLoginCheckScriptTests` runs the release job's GitHub Packages login check (with a fake `dotnet`
+    and `jq`), `RepoDocsTests` checks this file and `docs/roomkit.md`, `SourceScanTests` scans
+    `AccessToken.cs` and `ProjectGit.cs` as text (fixed-time compare, fixed read-only git calls, no network).
+    `HostHooksScriptTests` runs `Shared/HostHooksHarness.js` with `node` (needs `node` on PATH): it loads the real
+    `counts.js` and `live.js` into a `node:vm` context with stub globals to check the host hook registry.
+    `BadgeScriptTests` runs `Shared/BadgeHarness.js` the same way: it loads the real `sw.js` and `push.js` with a
+    fake Badging API to check the push `badge` field and `setRoomKitBadge`.
   - `docs/roomkit.md`: the library's docs (the package readme).
   - `.github/workflows/ci.yml` (tests on macOS and Windows for PRs into and pushes to `develop`),
     `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (the release, see Git).
@@ -36,5 +42,5 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   checkout, and PR fields, outputs and tokens reach a `run:` script only through `env:`.
 - **Git:** `develop` is the working branch: factory work branches off it as `factory/<job-id>` and is merged back with `--no-ff`. `main` holds releases only and is pushed to only for a new release.
   A release is a pull request from `develop` into `main` titled `release vX.Y.Z` (SemVer, no `-develop`). When it
-  is merged, `release.yml` tests, packs `RoomKit.X.Y.Z.nupkg`, attests it, creates the GitHub release `vX.Y.Z` on
+  is merged, `release.yml` tests, packs `RoomKit.X.Y.Z.nupkg`, attests it, checks the GitHub Packages login (an authenticated `dotnet package search`), creates the GitHub release `vX.Y.Z` on
   the merge commit and pushes the package to GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`).

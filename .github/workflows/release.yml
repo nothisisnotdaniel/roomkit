@@ -4,11 +4,14 @@
 #   step checks the same again. There are no prereleases from develop.
 # - test needs version: the tests run on macOS (Apple silicon) and Windows on the merge commit.
 # - release needs version and test. It packs RoomKit.<version>.nupkg on the merge commit, writes SHA256SUMS,
-#   attests the package's build provenance, creates the GitHub release v<version> (and its tag) on the merge
-#   commit with the package and SHA256SUMS, then pushes the package to GitHub Packages
-#   (https://nuget.pkg.github.com/nothisisnotdaniel/index.json). Only this job may write, with contents
-#   (the release), packages (the push), id-token and attestations (the attestation). The push uses the run's
-#   GITHUB_TOKEN; no other secret is needed.
+#   attests the package's build provenance, checks the GitHub Packages login with an authenticated search of
+#   the feed (a dry run of the push login, so a refused login stops the job before anything is published),
+#   creates the GitHub release v<version> (and its tag) on the merge commit with the package and SHA256SUMS,
+#   then pushes the package to GitHub Packages (https://nuget.pkg.github.com/nothisisnotdaniel/index.json).
+#   Only this job may write, with contents (the release), packages (the push), id-token and attestations (the
+#   attestation). The check and the push use the run's GITHUB_TOKEN, handed to NuGet only through the step's
+#   environment and a job-local nuget.config under RUNNER_TEMP (never as a command-line argument); no other
+#   secret is needed.
 # Refs, PR fields, job outputs and tokens reach the shell only through environment variables (the env: blocks),
 # never through ${{ }} inside a run: script.
 # Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), the same as ControlRoom's,
@@ -158,6 +161,39 @@ jobs:
         with:
           subject-path: dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
 
+      - name: Check the GitHub Packages login
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # A dry run of the push login before anything is published: the same job-local config as the push step,
+        # used for an authenticated search of the feed. A refused login fails here, before the GitHub release.
+        run: |
+          umask 077
+          CONFIG_DIR="$RUNNER_TEMP/roomkit-nuget-check"
+          trap 'rm -rf "$CONFIG_DIR"' EXIT
+          mkdir "$CONFIG_DIR"
+          cat > "$CONFIG_DIR/nuget.config" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="github" value="https://nuget.pkg.github.com/nothisisnotdaniel/index.json" />
+            </packageSources>
+            <packageSourceCredentials>
+              <github>
+                <add key="Username" value="x-access-token" />
+                <add key="ClearTextPassword" value="%GITHUB_TOKEN%" />
+              </github>
+            </packageSourceCredentials>
+          </configuration>
+          EOF
+          dotnet package search RoomKit --source github --configfile "$CONFIG_DIR/nuget.config" --take 1 --format json > "$CONFIG_DIR/search.json"
+          if ! jq -e '(.problems | length) == 0 and (.searchResult | length) == 1 and .searchResult[0].sourceName == "github" and ((.searchResult[0].problems // []) | length) == 0' "$CONFIG_DIR/search.json" > /dev/null; then
+            echo "GitHub Packages refused the login; nothing was released or pushed" >&2
+            jq -r '(.problems[]?.text?, .searchResult[]?.problems[]?.text?) | strings' "$CONFIG_DIR/search.json" >&2 || true
+            exit 1
+          fi
+          echo "GitHub Packages accepted the login"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -172,4 +208,26 @@ jobs:
       - name: Push to GitHub Packages
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: dotnet nuget push "dist/RoomKit.$RELEASE_VERSION.nupkg" --source https://nuget.pkg.github.com/nothisisnotdaniel/index.json --api-key "$GITHUB_TOKEN"
+        # The token reaches NuGet only through this env: block. The job-local config names it as %GITHUB_TOKEN%,
+        # which NuGet expands in memory, so it is in no process's arguments and not in the file.
+        run: |
+          umask 077
+          CONFIG_DIR="$RUNNER_TEMP/roomkit-nuget"
+          trap 'rm -rf "$CONFIG_DIR"' EXIT
+          mkdir "$CONFIG_DIR"
+          cat > "$CONFIG_DIR/nuget.config" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="github" value="https://nuget.pkg.github.com/nothisisnotdaniel/index.json" />
+            </packageSources>
+            <packageSourceCredentials>
+              <github>
+                <add key="Username" value="x-access-token" />
+                <add key="ClearTextPassword" value="%GITHUB_TOKEN%" />
+              </github>
+            </packageSourceCredentials>
+          </configuration>
+          EOF
+          dotnet nuget push "dist/RoomKit.$RELEASE_VERSION.nupkg" --source github --configfile "$CONFIG_DIR/nuget.config"

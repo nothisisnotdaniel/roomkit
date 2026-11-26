@@ -19,6 +19,12 @@
     <Using Include="RoomKit" />
   </ItemGroup>
 
+  <!-- HostHooksScriptTests and BadgeScriptTests run these harnesses with node. -->
+  <ItemGroup>
+    <None Update="Shared\HostHooksHarness.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Shared\BadgeHarness.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\RoomKit\RoomKit.csproj" />
   </ItemGroup>
