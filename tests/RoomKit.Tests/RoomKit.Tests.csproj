@@ -28,6 +28,7 @@
     <Compile Include="..\ControlRoom.Server.Tests\PushTestData.cs" Link="Shared\PushTestData.cs" />
     <Compile Include="..\ControlRoom.Server.Tests\RepoCopy.cs" Link="Shared\RepoCopy.cs" />
     <Compile Include="..\ControlRoom.Server.Tests\WindowsReleaseFixture.cs" Link="Shared\WindowsReleaseFixture.cs" />
+    <Compile Include="..\ControlRoom.Server.Tests\TestPartsGuardTests.cs" Link="Shared\TestPartsGuardTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
