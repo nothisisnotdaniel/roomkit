@@ -85,7 +85,7 @@ public sealed partial class WorkflowTests
             "shasum -a 256 \"RoomKit.$RELEASE_VERSION.nupkg\" > SHA256SUMS\n",
             "uses: actions/attest-build-provenance@",
             "gh release create \"v$RELEASE_VERSION\" \"dist/RoomKit.$RELEASE_VERSION.nupkg\" dist/SHA256SUMS ",
-            "run: dotnet nuget push ",
+            "dotnet nuget push \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --source github --configfile ",
         ]);
         Assert.Contains("--target \"$RELEASE_TARGET\"", Step(release, "Create GitHub release"), StringComparison.Ordinal);
         Assert.Contains(
@@ -94,20 +94,90 @@ public sealed partial class WorkflowTests
     }
 
     [Fact]
-    public void Release_Push_SendsExactlyThePackageToGitHubPackagesWithTheTokenFromEnv()
+    public void Release_Push_PutsNoApiKeyOptionInTheFile()
     {
         string yaml = Workflow("release.yml");
-        string release = JobBlock(yaml, "release");
 
-        Assert.Equal(
-            "        env:\n"
-            + "          GITHUB_TOKEN: ${{ github.token }}\n"
-            + "        run: dotnet nuget push \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --source " + Feed
-            + " --api-key \"$GITHUB_TOKEN\"\n",
-            Step(release, "Push to GitHub Packages"));
-        Assert.Single(Regex.Matches(yaml, "dotnet nuget push"));
-        Assert.Single(Regex.Matches(yaml, "--api-key"));
+        Assert.DoesNotContain("--api-key", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(" -k ", yaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Release_Push_GetsTheTokenOnlyFromEnvAndNamesItOnlyAsTheConfigPlaceholder()
+    {
+        string yaml = Workflow("release.yml");
+        string step = Step(JobBlock(yaml, "release"), "Push to GitHub Packages");
+
+        string[] env = [.. step.Split('\n').SkipWhile(line => line != "        env:").Skip(1)
+            .TakeWhile(line => line.StartsWith("          ", StringComparison.Ordinal))];
+        Assert.Contains("        env:\n", step, StringComparison.Ordinal);
+        Assert.Equal(["          GITHUB_TOKEN: ${{ github.token }}"], env);
+
+        string run = PushRun(yaml);
+        Assert.DoesNotContain("$GITHUB_TOKEN", run, StringComparison.Ordinal);
+        Assert.DoesNotContain("${GITHUB_TOKEN}", run, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(run, "GITHUB_TOKEN"));
+        Assert.Single(Regex.Matches(run, "%GITHUB_TOKEN%"));
         Assert.DoesNotContain("secrets.", yaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Release_Push_WritesAClearedConfigWithTheFeedAndThePlaceholderUnderRunnerTemp()
+    {
+        string run = PushRun(Workflow("release.yml"));
+
+        Assert.Contains("CONFIG_DIR=\"$RUNNER_TEMP/roomkit-nuget\"\n", run, StringComparison.Ordinal);
+        Assert.Contains("cat > \"$CONFIG_DIR/nuget.config\" <<'EOF'\n", run, StringComparison.Ordinal);
+        Assert.Contains("\n          EOF\n", run, StringComparison.Ordinal);
+        Assert.DoesNotContain("$HOME", run, StringComparison.Ordinal);
+        Assert.DoesNotContain("~/", run, StringComparison.Ordinal);
+        Assert.DoesNotContain("$GITHUB_WORKSPACE", run, StringComparison.Ordinal);
+        AssertInOrder(run, [
+            "<<'EOF'\n",
+            "<packageSources>\n",
+            "<clear />\n",
+            "<add key=\"github\" value=\"" + Feed + "\" />\n",
+            "</packageSources>\n",
+            "<packageSourceCredentials>\n",
+            "<github>\n",
+            "<add key=\"Username\" value=\"x-access-token\" />\n",
+            "<add key=\"ClearTextPassword\" value=\"%GITHUB_TOKEN%\" />\n",
+            "</github>\n",
+            "</packageSourceCredentials>\n",
+            "\n          EOF\n",
+        ]);
+    }
+
+    [Fact]
+    public void Release_Push_SendsExactlyThePackageWithTheTempConfigOnly()
+    {
+        string yaml = Workflow("release.yml");
+        string run = PushRun(yaml);
+
+        Assert.Contains(
+            "\n          dotnet nuget push \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --source github "
+            + "--configfile \"$CONFIG_DIR/nuget.config\"",
+            run,
+            StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(yaml, "dotnet nuget push"));
+        Assert.DoesNotContain("nuget add source", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("nuget update source", yaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Release_Push_RemovesTheTempConfigOnEveryExitAndWritesItPrivately()
+    {
+        string run = PushRun(Workflow("release.yml"));
+
+        AssertInOrder(run, ["umask 077\n", "trap '", "mkdir -p \"$CONFIG_DIR\"\n", "<<'EOF'\n", "dotnet nuget push "]);
+        string trap = Assert.Single(run.Split('\n'), line => line.TrimStart().StartsWith("trap ", StringComparison.Ordinal));
+        Assert.Equal("          trap 'rm -rf \"$CONFIG_DIR\"' EXIT", trap);
+    }
+
+    /// <summary>The run: block of the release job's push step (the one run block that pushes).</summary>
+    private static string PushRun(string yaml)
+    {
+        return Assert.Single(RunBlocks(yaml), run => run.Contains("dotnet nuget push", StringComparison.Ordinal)) + "\n";
     }
 
     [Theory]

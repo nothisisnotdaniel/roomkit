@@ -8,7 +8,8 @@
 #   commit with the package and SHA256SUMS, then pushes the package to GitHub Packages
 #   (https://nuget.pkg.github.com/nothisisnotdaniel/index.json). Only this job may write, with contents
 #   (the release), packages (the push), id-token and attestations (the attestation). The push uses the run's
-#   GITHUB_TOKEN; no other secret is needed.
+#   GITHUB_TOKEN, handed to NuGet only through the step's environment and a job-local nuget.config under
+#   RUNNER_TEMP (never as a command-line argument); no other secret is needed.
 # Refs, PR fields, job outputs and tokens reach the shell only through environment variables (the env: blocks),
 # never through ${{ }} inside a run: script.
 # Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), the same as ControlRoom's,
@@ -172,4 +173,26 @@ jobs:
       - name: Push to GitHub Packages
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: dotnet nuget push "dist/RoomKit.$RELEASE_VERSION.nupkg" --source https://nuget.pkg.github.com/nothisisnotdaniel/index.json --api-key "$GITHUB_TOKEN"
+        # The token reaches NuGet only through this env: block. The job-local config names it as %GITHUB_TOKEN%,
+        # which NuGet expands in memory, so it is in no process's arguments and not in the file.
+        run: |
+          umask 077
+          CONFIG_DIR="$RUNNER_TEMP/roomkit-nuget"
+          trap 'rm -rf "$CONFIG_DIR"' EXIT
+          mkdir -p "$CONFIG_DIR"
+          cat > "$CONFIG_DIR/nuget.config" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="github" value="https://nuget.pkg.github.com/nothisisnotdaniel/index.json" />
+            </packageSources>
+            <packageSourceCredentials>
+              <github>
+                <add key="Username" value="x-access-token" />
+                <add key="ClearTextPassword" value="%GITHUB_TOKEN%" />
+              </github>
+            </packageSourceCredentials>
+          </configuration>
+          EOF
+          dotnet nuget push "dist/RoomKit.$RELEASE_VERSION.nupkg" --source github --configfile "$CONFIG_DIR/nuget.config"
