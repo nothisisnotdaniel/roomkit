@@ -148,6 +148,20 @@ pre-caches the shell past the HTTP cache and calls `skipWaiting()`; activate del
 `clients.claim()`. Raise `CacheVersion` whenever a shell file changes, so old caches are dropped; ControlRoom's
 `ShellCacheLedger` test fails the build when the shell changed without it.
 
+### App badge
+
+A push payload may carry `badge`, a whole number from 0 to 999, separate from `count` (the number of items an
+`approval` notification names). When a push arrives, `sw.js` sets the app icon's badge to it with
+`navigator.setAppBadge`, and `0` clears it with `navigator.clearAppBadge`; a missing `badge`, or any other value (a
+negative number, more than 999, a fraction, a string, `true`, `null`, an object), leaves the badge as it is. The
+notification is shown the same way with or without `badge`, also when the browser has no Badging API or the call
+fails. iOS (16.4 and later) shows the badge only for a web app added to the Home Screen with notification permission.
+
+While the app is open, a host script can call `setRoomKitBadge(count)` from `push.js`: 1 to 999 sets the badge, `0`
+clears it, and any other value does nothing. It returns a promise that resolves to `true` when the Badging call was
+made and settled, and to `false` otherwise (an invalid value, no Badging API, or a failed call); it never throws or
+rejects. Loading `push.js` does not touch the badge.
+
 ## Host hooks
 
 With the factory module, `counts.js` declares the frozen `const roomKitHooks`, so a host app runs its own code at

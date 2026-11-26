@@ -257,6 +257,31 @@ function setNotifyUpdate(on) {
   });
 }
 
+// Sets the app icon's badge to count (a whole number 1..999) or clears it (0) through the Badging API, for a host app
+// while it is open. Any other value does nothing. Resolves to true when a Badging call was made and settled, else
+// false (invalid value, no Badging API, or the call failed); never throws or rejects.
+async function setRoomKitBadge(count) {
+  if (!Number.isInteger(count) || count < 0 || count > 999) {
+    return false;
+  }
+  try {
+    if (count === 0) {
+      if (typeof navigator.clearAppBadge !== "function") {
+        return false;
+      }
+      await navigator.clearAppBadge();
+    } else {
+      if (typeof navigator.setAppBadge !== "function") {
+        return false;
+      }
+      await navigator.setAppBadge(count);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Called by board.js each time the board is shown.
 function showPushSection() {
   if (pushBusy) {
