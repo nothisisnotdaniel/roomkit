@@ -7,5 +7,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 Each story has one `Category: <name>` line after its story sentence, one of: feature, bug, security, ux, ui, tidy-up, test, ci, docs.
 `- [?]` items are follow-ups the factory proposed: change `[?]` to `[ ]` to approve one, or delete the line and its file.
 `- [h]` items are tasks for you. `(after: #3)` waits until item 3 is done; `(after: Times#5)` names another project's item.
-- [ ] [#1](backlog/001-move-roomkit-into-its-own-repository.md) Move RoomKit into its own repository with CI and a release workflow
+- [x] [#1](backlog/001-move-roomkit-into-its-own-repository.md) Move RoomKit into its own repository with CI and a release workflow → 431-roomkit-own-repo.fba5df193b59469fbd65fb747d088dcf
 - [h] [#2](backlog/002-release-roomkit-v1-0-0-and.md) Release RoomKit v1.0.0 and give ControlRoom and PlayRoom read access to the package (after: #1)
