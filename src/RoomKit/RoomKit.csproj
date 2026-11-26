@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>RoomKit</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The shared web files are served at the app's root, so their URLs stay /app.css, /token.js and so on. -->
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PackageId>RoomKit</PackageId>
+    <Authors>RoomKit</Authors>
+    <Description>The shared core of a factory control app: sign-in, Host check, loopback listening, the web app shell, push, updates, backlogs, search, history and health.</Description>
+    <PackageReadmeFile>docs/roomkit.md</PackageReadmeFile>
+    <!-- The PowerShell files are distributable app scripts. Only the operator invokes them. -->
+    <NoWarn>$(NoWarn);NU5110;NU5111</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- The same implicit usings as Microsoft.NET.Sdk.Web. -->
+  <ItemGroup>
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RoomKit.Tests" />
+    <InternalsVisibleTo Include="ControlRoom.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\roomkit.md" Pack="true" PackagePath="docs\roomkit.md" />
+    <None Include="scripts\launch-agent.sh" Pack="true" PackagePath="scripts\launch-agent.sh" />
+    <None Include="scripts\updater.sh" Pack="true" PackagePath="scripts\updater.sh" />
+    <None Update="scripts\launch-agent.ps1" Pack="true" PackagePath="scripts\launch-agent.ps1" />
+    <None Update="scripts\updater.ps1" Pack="true" PackagePath="scripts\updater.ps1" />
+  </ItemGroup>
+
+</Project>
