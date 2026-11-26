@@ -77,13 +77,14 @@ public sealed partial class WorkflowTests
 
         Assert.Equal(
             ["Check out the release commit", "Set up .NET", "Pack", "Checksums", "Attest build provenance",
-                "Create GitHub release", "Push to GitHub Packages"],
+                "Check the GitHub Packages login", "Create GitHub release", "Push to GitHub Packages"],
             StepNames(release));
         AssertInOrder(release, [
             "uses: actions/checkout@",
             "run: dotnet pack src/RoomKit -c Release -p:Version=\"$RELEASE_VERSION\" -o dist\n",
             "shasum -a 256 \"RoomKit.$RELEASE_VERSION.nupkg\" > SHA256SUMS\n",
             "uses: actions/attest-build-provenance@",
+            "dotnet package search RoomKit --source github --configfile ",
             "gh release create \"v$RELEASE_VERSION\" \"dist/RoomKit.$RELEASE_VERSION.nupkg\" dist/SHA256SUMS ",
             "dotnet nuget push \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --source github --configfile ",
         ]);
@@ -172,6 +173,63 @@ public sealed partial class WorkflowTests
         AssertInOrder(run, ["umask 077\n", "trap '", "mkdir \"$CONFIG_DIR\"\n", "<<'EOF'\n", "dotnet nuget push "]);
         string trap = Assert.Single(run.Split('\n'), line => line.TrimStart().StartsWith("trap ", StringComparison.Ordinal));
         Assert.Equal("          trap 'rm -rf \"$CONFIG_DIR\"' EXIT", trap);
+    }
+
+    [Fact]
+    public void Release_LoginCheck_GetsTheTokenOnlyFromEnvAndUsesTheSameConfigAsThePush()
+    {
+        string yaml = Workflow("release.yml");
+        string step = Step(JobBlock(yaml, "release"), "Check the GitHub Packages login");
+
+        string[] env = [.. step.Split('\n').SkipWhile(line => line != "        env:").Skip(1)
+            .TakeWhile(line => line.StartsWith("          ", StringComparison.Ordinal))];
+        Assert.Equal(["          GITHUB_TOKEN: ${{ github.token }}"], env);
+
+        string run = CheckRun(yaml);
+        Assert.DoesNotContain("$GITHUB_TOKEN", run, StringComparison.Ordinal);
+        Assert.DoesNotContain("${GITHUB_TOKEN}", run, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(run, "GITHUB_TOKEN"));
+        Assert.Equal(Heredoc(PushRun(yaml)), Heredoc(run));
+        Assert.Equal(2, Regex.Matches(yaml, "GITHUB_TOKEN: \\$\\{\\{ github\\.token \\}\\}").Count);
+    }
+
+    [Fact]
+    public void Release_LoginCheck_SearchesTheFeedWithTheTempConfigAndFailsOnAnyProblemBeforeTheRelease()
+    {
+        string yaml = Workflow("release.yml");
+        string run = CheckRun(yaml);
+
+        Assert.Contains("CONFIG_DIR=\"$RUNNER_TEMP/roomkit-nuget-check\"\n", run, StringComparison.Ordinal);
+        AssertInOrder(run, [
+            "umask 077\n",
+            "trap 'rm -rf \"$CONFIG_DIR\"' EXIT\n",
+            "mkdir \"$CONFIG_DIR\"\n",
+            "<<'EOF'\n",
+            "\n          dotnet package search RoomKit --source github --configfile \"$CONFIG_DIR/nuget.config\" "
+                + "--take 1 --format json > \"$CONFIG_DIR/search.json\"\n",
+            "if ! jq -e '",
+            "exit 1\n",
+        ]);
+        Assert.Single(Regex.Matches(yaml, "dotnet package search"));
+        Assert.DoesNotContain("--api-key", run, StringComparison.Ordinal);
+        AssertInOrder(JobBlock(yaml, "release"), [
+            "- name: Check the GitHub Packages login\n", "- name: Create GitHub release\n", "- name: Push to GitHub Packages\n"]);
+    }
+
+    /// <summary>The run: block of the release job's login check step.</summary>
+    private static string CheckRun(string yaml)
+    {
+        return Assert.Single(RunBlocks(yaml), run => run.Contains("dotnet package search", StringComparison.Ordinal)) + "\n";
+    }
+
+    /// <summary>The text from the <c>&lt;&lt;'EOF'</c> line to its <c>EOF</c> line in a run block.</summary>
+    private static string Heredoc(string run)
+    {
+        int start = run.IndexOf("<<'EOF'\n", StringComparison.Ordinal);
+        Assert.True(start >= 0, "missing heredoc");
+        int end = run.IndexOf("\n          EOF\n", start, StringComparison.Ordinal);
+        Assert.True(end > start, "missing heredoc end");
+        return run[start..end];
     }
 
     /// <summary>The run: block of the release job's push step (the one run block that pushes).</summary>
