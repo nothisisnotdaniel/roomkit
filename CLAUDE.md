@@ -26,7 +26,8 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
     `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData`, `RepoCopy`, `WindowsReleaseFixture` and
     its `.ps1`). `WorkflowTests` reads the two workflows as text, `ReleaseVersionScriptTests` runs the release
     script, `PushLoginCheckScriptTests` runs the release job's GitHub Packages login check (with a fake `dotnet`
-    and `jq`), `RepoDocsTests` checks this file and `docs/roomkit.md`.
+    and `jq`), `RepoDocsTests` checks this file and `docs/roomkit.md`, `SourceScanTests` scans
+    `AccessToken.cs` and `ProjectGit.cs` as text (fixed-time compare, fixed read-only git calls, no network).
   - `docs/roomkit.md`: the library's docs (the package readme).
   - `.github/workflows/ci.yml` (tests on macOS and Windows for PRs into and pushes to `develop`),
     `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (the release, see Git).
