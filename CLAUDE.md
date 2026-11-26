@@ -30,6 +30,8 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
     `AccessToken.cs` and `ProjectGit.cs` as text (fixed-time compare, fixed read-only git calls, no network).
     `HostHooksScriptTests` runs `Shared/HostHooksHarness.js` with `node` (needs `node` on PATH): it loads the real
     `counts.js` and `live.js` into a `node:vm` context with stub globals to check the host hook registry.
+    `BadgeScriptTests` runs `Shared/BadgeHarness.js` the same way: it loads the real `sw.js` and `push.js` with a
+    fake Badging API to check the push `badge` field and `setRoomKitBadge`.
   - `docs/roomkit.md`: the library's docs (the package readme).
   - `.github/workflows/ci.yml` (tests on macOS and Windows for PRs into and pushes to `develop`),
     `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (the release, see Git).

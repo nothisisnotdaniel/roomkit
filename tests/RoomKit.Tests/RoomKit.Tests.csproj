@@ -19,9 +19,10 @@
     <Using Include="RoomKit" />
   </ItemGroup>
 
-  <!-- HostHooksScriptTests runs this harness with node. -->
+  <!-- HostHooksScriptTests and BadgeScriptTests run these harnesses with node. -->
   <ItemGroup>
     <None Update="Shared\HostHooksHarness.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Shared\BadgeHarness.js" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

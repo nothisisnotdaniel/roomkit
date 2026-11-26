@@ -62,8 +62,9 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(networkFirst(event));
 });
 
-// Push: the payload holds only kind, project, job, stage, version, previous, reason and count. The title comes from this fixed table,
-// never from the payload; the body is built from the payload's names. Nothing is fetched here.
+// Push: the payload holds only kind, project, job, stage, version, previous, reason, count and badge. The title comes from this fixed table,
+// never from the payload; the body is built from the payload's names. badge (a whole number 0..999, separate from
+// count) only sets the app icon's badge, 0 clears it, and any other value leaves it as it is. Nothing is fetched here.
 const PushTitles = {
   "needs-human": "Needs you",
   "merge-conflict": "Merge conflict",
@@ -143,9 +144,38 @@ function pushNotification(data) {
   };
 }
 
+// The payload's badge when it is a whole number 0..999, else null (the badge stays as it is).
+function pushBadge(data) {
+  const badge = data.badge;
+  return Number.isInteger(badge) && badge >= 0 && badge <= 999 ? badge : null;
+}
+
+// Sets (1..999) or clears (0) the app icon's badge through the Badging API. Never rejects: a missing or failing API
+// leaves the badge as it is and the notification is shown either way.
+async function updatePushBadge(badge) {
+  if (badge === null) {
+    return;
+  }
+  try {
+    if (badge === 0) {
+      if (typeof navigator.clearAppBadge === "function") {
+        await navigator.clearAppBadge();
+      }
+    } else if (typeof navigator.setAppBadge === "function") {
+      await navigator.setAppBadge(badge);
+    }
+  } catch {
+    // No badge on this device: the notification still counts.
+  }
+}
+
 self.addEventListener("push", (event) => {
-  const note = pushNotification(readPushData(event));
-  event.waitUntil(self.registration.showNotification(note.title, note.options));
+  const data = readPushData(event);
+  const note = pushNotification(data);
+  event.waitUntil(Promise.all([
+    updatePushBadge(pushBadge(data)),
+    self.registration.showNotification(note.title, note.options),
+  ]));
 });
 
 // Opens the job page (#job/<id>) or the backlogs view; focuses an open window of the app when there is one.
