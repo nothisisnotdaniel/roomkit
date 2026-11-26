@@ -5,6 +5,8 @@
 #        scripts/launch-agent.sh install --tailnet-host <name> --tailnet-port <port>  (also adds --TailnetPort <port>,
 #          for a tailscale serve --https=<port> other than 443)
 #        scripts/launch-agent.sh install --factory-root <path>  (the factory root; default: the folder above the app's)
+#        scripts/launch-agent.sh install --push-subject mailto:<address>|https://<host>  (adds --PushSubject <subject>,
+#          the Web Push VAPID subject; Apple refuses the default mailto:<app>@localhost)
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
 #          (installs the ready-built release from GitHub instead of publishing: vX.Y.Z, or without a tag the
 #          latest one, or the newest develop build when settings.json picks the develop channel, plus the updater LaunchAgent UPDATER_LABEL that runs <support>/updater.sh about a minute
@@ -37,7 +39,7 @@ SOLUTION_FILE="MyRoom.slnx"
 UPDATER_INTERVAL=900
 UPDATER_START_DELAY=60
 UPDATE_RUNNING="An update is running. Try again in a few minutes."
-USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name> [--tailnet-port <port>]] [--factory-root <path>]|uninstall|status"
+USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name> [--tailnet-port <port>]] [--factory-root <path>] [--push-subject <subject>]|uninstall|status"
 # RELEASES (in the roomkit:app block) is the one repository releases come from (renaming it breaks --release).
 # The develop channel's one release list (newest first), the same as updater.sh.
 LIST_URL="https://api.github.com/repos/$REPO_SLUG/releases?per_page=100"
@@ -104,6 +106,37 @@ valid_tailnet_port() {
     [ "$1" -le 65535 ]
 }
 
+# True for mailto:<user>@<domain> (user of A-Z a-z 0-9 . _ % + -, a dotted domain of A-Z a-z 0-9 . - that is not
+# localhost) or https://<host>[/path] (A-Z a-z 0-9 . _ ~ / -), at most 200 characters: the VAPID subject push services
+# accept. No space, quote or control character can pass, so the value is safe in the plist.
+valid_push_subject() {
+    [ ${#1} -le 200 ] || return 1
+    case $1 in
+        mailto:*)
+            ps_rest=${1#mailto:}
+            ps_user=${ps_rest%%@*}
+            ps_domain=${ps_rest#*@}
+            [ "$ps_user" != "$ps_rest" ] || return 1
+            case $ps_user in
+                '' | *[!A-Za-z0-9._%+-]*) return 1 ;;
+            esac
+            case $ps_domain in
+                '' | *[!A-Za-z0-9.-]* | .* | *. | *..*) return 1 ;;
+                localhost | *.localhost) return 1 ;;
+                *.*) ;;
+                *) return 1 ;;
+            esac
+            ;;
+        https://*)
+            ps_rest=${1#https://}
+            case $ps_rest in
+                '' | /* | *[!A-Za-z0-9._~/-]*) return 1 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
 valid_tailnet_host() {
     case $1 in
         *.ts.net) ;;
@@ -157,11 +190,13 @@ TAILNET_PORT=""
 HAS_PORT=no
 FACTORY_ROOT=""
 HAS_ROOT=no
+PUSH_SUBJECT=""
+HAS_SUBJECT=no
 RELEASE=no
 TAG=""
 if [ "$COMMAND" = install ]; then
-    # install [--release [vX.Y.Z]] [--tailnet-host <name> [--tailnet-port <port>]] [--factory-root <path>]: in any
-    # order, each at most once; --tailnet-port only with --tailnet-host.
+    # install [--release [vX.Y.Z]] [--tailnet-host <name> [--tailnet-port <port>]] [--factory-root <path>]
+    # [--push-subject <subject>]: in any order, each at most once; --tailnet-port only with --tailnet-host.
     while [ $# -gt 0 ]; do
         case $1 in
             --tailnet-host)
@@ -201,6 +236,17 @@ if [ "$COMMAND" = install ]; then
                 FACTORY_ROOT=$2
                 shift 2
                 ;;
+            --push-subject)
+                if [ "$HAS_SUBJECT" = yes ] || [ $# -lt 2 ]; then
+                    usage
+                fi
+                if ! valid_push_subject "$2"; then
+                    fail "--push-subject must be mailto:<address> or https://<host>. Nothing was changed."
+                fi
+                HAS_SUBJECT=yes
+                PUSH_SUBJECT=$2
+                shift 2
+                ;;
             --release)
                 if [ "$RELEASE" = yes ]; then
                     usage
@@ -209,7 +255,7 @@ if [ "$COMMAND" = install ]; then
                 shift
                 if [ $# -gt 0 ]; then
                     case $1 in
-                        --tailnet-host | --tailnet-port | --factory-root) ;;
+                        --tailnet-host | --tailnet-port | --factory-root | --push-subject) ;;
                         *)
                             valid_tag "$1" || usage
                             TAG=$1
@@ -846,6 +892,10 @@ do_install() {
         if [ -n "$TAILNET_PORT" ]; then
             printf '        <string>--TailnetPort</string>\n'
             printf '        <string>%s</string>\n' "$TAILNET_PORT"
+        fi
+        if [ -n "$PUSH_SUBJECT" ]; then
+            printf '        <string>--PushSubject</string>\n'
+            printf '        <string>%s</string>\n' "$(xml_escape "$PUSH_SUBJECT")"
         fi
         printf '    </array>\n'
         printf '    <key>WorkingDirectory</key>\n'
