@@ -37,4 +37,11 @@ public sealed class ShellScriptSkipTests
 
         Assert.DoesNotContain("IsWindows()", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Attributes_SetSkipToTheReasonForThisMachine()
+    {
+        Assert.Equal(ShellScriptSkip.SkipReason(), new ShellScriptFactAttribute().Skip);
+        Assert.Equal(ShellScriptSkip.SkipReason(), new ShellScriptTheoryAttribute().Skip);
+    }
 }
