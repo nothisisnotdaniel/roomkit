@@ -14,5 +14,5 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#5](backlog/005-let-host-apps-hook-into-job.md) Let host apps hook into job-count loads and live change checks → 441-host-hook-registry.788d4a25e68b491789f7bf277df98fe8
 - [h] [#6](backlog/006-release-roomkit-0-2-0-with.md) Release RoomKit 0.2.0 with the host hooks (after: #5)
 - [ ] [#7](backlog/007-confirm-the-first-release-push-to.md) Confirm the first release push to GitHub Packages works without --api-key
-- [?] [#8](backlog/008-narrow-the-jq-error-output-of.md) Narrow the jq error output of the GitHub Packages login check
+- [ ] [#8](backlog/008-narrow-the-jq-error-output-of.md) Narrow the jq error output of the GitHub Packages login check
 - [?] [#9](backlog/009-mark-the-push-login-check-tests.md) Mark the push login check tests as skipped on Windows
