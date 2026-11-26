@@ -156,7 +156,12 @@ function Get-UpdateSettings {
 }
 
 function Test-UpdateDue($Now, $Interval) {
-    if ([IO.File]::Exists((Join-Path $Support 'first-check'))) { return $true }
+    # Only a confirmed absence of the first-check marker lets the stamp decide; a marker that cannot be examined
+    # (shared, denied, linked or a directory) keeps the check due, as an unreadable stamp does.
+    Initialize-FileReader
+    try { $marker = [RoomKit.UpdateEntry]::Open((Join-Path $Support 'first-check'), $false) }
+    catch { return $true }
+    if ($marker) { $marker.Dispose(); return $true }
     try { $stamp = Read-PrivateText 'last-check' 32 }
     catch { return $true } # An unreadable or unsafe stamp cannot postpone a check.
     [long]$last = 0
