@@ -364,9 +364,18 @@ async function checkChanges() {
       }
       return;
     }
+    const previous = liveLast;
     const recovered = liveLost;
     setConnectionLost(false);
     noteChanges(next, recovered);
+    // The "liveChecked" host hooks (counts.js) run while the board views are shown, before the views refresh.
+    if (boardViewsVisible()) {
+      await runRoomKitHooks("liveChecked", {
+        jobsChanged: previous !== null && previous.jobs !== next.jobs,
+        recovered: recovered,
+        firstCheck: previous === null,
+      });
+    }
     await refreshShownViews();
   } finally {
     livePending = false;
