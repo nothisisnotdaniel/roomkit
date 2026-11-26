@@ -12,7 +12,7 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#3](backlog/003-keep-the-github-packages-token-off.md) Keep the GitHub Packages token off the nuget push command line → 434-nuget-token-off-cmdline.a2c01aa145d94d0b8d1c7dc4cce77c33
 - [x] [#4](backlog/004-bring-the-accesstoken-and-projectgit-source.md) Bring the AccessToken and ProjectGit source-scan tests over from ControlRoom → 440-source-scan-tests.9982c43b979e4092badf81796391071e
 - [x] [#5](backlog/005-let-host-apps-hook-into-job.md) Let host apps hook into job-count loads and live change checks → 441-host-hook-registry.788d4a25e68b491789f7bf277df98fe8
-- [ ] [#10](backlog/010-show-an-app-badge-on-the.md) Show an app badge on the home-screen icon from a push payload
+- [x] [#10](backlog/010-show-an-app-badge-on-the.md) Show an app badge on the home-screen icon from a push payload → 450-app-badge-from-push.ac68c852ba1d4128a06b3ef139c10f64
 - [h] [#6](backlog/006-release-roomkit-0-2-0-with.md) Release RoomKit 0.2.0 with the host hooks and app badge (after: #5; #10)
 - [ ] [#9](backlog/009-mark-the-push-login-check-tests.md) Mark the push login check tests as skipped on Windows
 - [ ] [#8](backlog/008-narrow-the-jq-error-output-of.md) Narrow the jq error output of the GitHub Packages login check
