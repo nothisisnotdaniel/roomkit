@@ -280,14 +280,30 @@ namespace RoomKit {
         }
 
         private static SafeFileHandle Open(string path, bool directory, FileShare share) {
+            SafeFileHandle handle;
+            if (!directory) {
+                // OPEN_REPARSE_POINT only: without backup semantics a share lock holds even when the token has the
+                // backup privilege enabled (Git Bash enables it), so a locked file stays unreadable. Access denied
+                // (a directory or a denied entry) falls through to the backup-semantics open and its checks.
+                handle = CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
+                if (!handle.IsInvalid) return Checked(handle, directory);
+                int fileError = Marshal.GetLastWin32Error();
+                handle.Dispose();
+                if (fileError == 2 || fileError == 3) return null;
+                if (fileError != 5) throw new Win32Exception(fileError);
+            }
             // OPEN_REPARSE_POINT | BACKUP_SEMANTICS
-            SafeFileHandle handle = CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+            handle = CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
             if (handle.IsInvalid) {
                 int error = Marshal.GetLastWin32Error();
                 handle.Dispose();
                 if (error == 2 || error == 3) return null;
                 throw new Win32Exception(error);
             }
+            return Checked(handle, directory);
+        }
+
+        private static SafeFileHandle Checked(SafeFileHandle handle, bool directory) {
             try {
                 AttributeTag info;
                 if (!GetFileInformationByHandleEx(handle, 9, out info, 8)) throw new Win32Exception(Marshal.GetLastWin32Error());
