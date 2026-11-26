@@ -216,6 +216,18 @@ public sealed partial class WorkflowTests
             "- name: Check the GitHub Packages login\n", "- name: Create GitHub release\n", "- name: Push to GitHub Packages\n"]);
     }
 
+    [Fact]
+    public void Release_LoginCheck_PrintsOnlyTheProblemTextsWithAFixedJqPath()
+    {
+        string run = CheckRun(Workflow("release.yml"));
+
+        Assert.DoesNotContain("jq -r '.. ", run, StringComparison.Ordinal);
+        string print = Assert.Single(run.Split('\n'), line => line.TrimStart().StartsWith("jq -r ", StringComparison.Ordinal));
+        Assert.Contains(".problems[]", print, StringComparison.Ordinal);
+        Assert.Contains(".searchResult[]", print, StringComparison.Ordinal);
+        Assert.EndsWith(">&2 || true", print, StringComparison.Ordinal);
+    }
+
     /// <summary>The run: block of the release job's login check step.</summary>
     private static string CheckRun(string yaml)
     {
