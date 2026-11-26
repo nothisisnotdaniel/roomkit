@@ -1,0 +1,175 @@
+# Releases RoomKit from a merged pull request from develop into main titled "release vX.Y.Z", in three jobs:
+# - version checks the event and works out the release version (.github/scripts/release-version.sh) and the
+#   merge commit. Closed-unmerged PRs, PRs from other branches and fork PRs are skipped by its if:, and its first
+#   step checks the same again. There are no prereleases from develop.
+# - test needs version: the tests run on macOS (Apple silicon) and Windows on the merge commit.
+# - release needs version and test. It packs RoomKit.<version>.nupkg on the merge commit, writes SHA256SUMS,
+#   attests the package's build provenance, creates the GitHub release v<version> (and its tag) on the merge
+#   commit with the package and SHA256SUMS, then pushes the package to GitHub Packages
+#   (https://nuget.pkg.github.com/nothisisnotdaniel/index.json). Only this job may write, with contents
+#   (the release), packages (the push), id-token and attestations (the attestation). The push uses the run's
+#   GITHUB_TOKEN; no other secret is needed.
+# Refs, PR fields, job outputs and tokens reach the shell only through environment variables (the env: blocks),
+# never through ${{ }} inside a run: script.
+# Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), the same as ControlRoom's,
+# so a moved tag cannot run new code with the write token.
+name: Release
+
+on:
+  pull_request:
+    types:
+      - "closed"
+    branches:
+      - "main"
+
+permissions: {}
+
+jobs:
+  version:
+    # Runs only for a merged PR from develop in this repository.
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_version: ${{ steps.version.outputs.RELEASE_VERSION }}
+      release_target: ${{ steps.version.outputs.RELEASE_TARGET }}
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_MERGED: ${{ github.event.pull_request.merged }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # All history and tags: the tags are read by release-version.sh, and the merge commit is checked
+          # against origin/main.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Check the event
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "Only a merged release pull request makes a release" >&2
+            exit 1
+          fi
+          if [ "$PR_MERGED" != "true" ]; then
+            echo "Pull request is not merged; nothing to release" >&2
+            exit 1
+          fi
+          if [ "$PR_HEAD_REF" != "develop" ]; then
+            echo "Release pull requests must come from develop" >&2
+            exit 1
+          fi
+          if [ "$PR_HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "Release pull requests must come from this repository" >&2
+            exit 1
+          fi
+          case "$MERGE_SHA" in
+            '' | *[!0-9a-f]*)
+              echo "The merge commit is not a lowercase hex commit id" >&2
+              exit 1
+              ;;
+          esac
+          if [ "${#MERGE_SHA}" -ne 40 ]; then
+            echo "The merge commit is not 40 characters long" >&2
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$MERGE_SHA" ]; then
+            echo "The checked-out commit is not the merge commit" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$MERGE_SHA" origin/main; then
+            echo "The merge commit is not on main" >&2
+            exit 1
+          fi
+
+      - name: Version
+        id: version
+        run: |
+          if ! RELEASE_VERSION="$(git tag --list 'v*' | sh .github/scripts/release-version.sh "$PR_TITLE")"; then
+            echo "The release pull request title must be exactly 'release vX.Y.Z' for a new version" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_TARGET=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.version.outputs.release_target }}
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test RoomKit.slnx -c Release
+
+  release:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
+      RELEASE_TARGET: ${{ needs.version.outputs.release_target }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.version.outputs.release_target }}
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Pack
+        run: dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist
+
+      - name: Checksums
+        run: |
+          cd dist
+          shasum -a 256 "RoomKit.$RELEASE_VERSION.nupkg" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Left unquoted below on purpose: when empty it must add no argument at all.
+          PRERELEASE=""
+          case "$RELEASE_VERSION" in
+            *-*) PRERELEASE="--prerelease" ;;
+          esac
+          gh release create "v$RELEASE_VERSION" "dist/RoomKit.$RELEASE_VERSION.nupkg" dist/SHA256SUMS --title "RoomKit $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
+
+      - name: Push to GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: dotnet nuget push "dist/RoomKit.$RELEASE_VERSION.nupkg" --source https://nuget.pkg.github.com/nothisisnotdaniel/index.json --api-key "$GITHUB_TOKEN"
