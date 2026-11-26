@@ -1,0 +1,44 @@
+# Runs RoomKit's tests on macOS (Apple silicon) and Windows for every pull request into develop and every push to
+# develop. A change to only backlog.md or backlog/ is skipped (paths-ignore). The job only reads: it has
+# contents: read and nothing else, and the checkout leaves no token in .git/config.
+# Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), the same as ControlRoom's.
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - "develop"
+    paths-ignore:
+      - "backlog.md"
+      - "backlog/**"
+  push:
+    branches:
+      - "develop"
+    paths-ignore:
+      - "backlog.md"
+      - "backlog/**"
+
+permissions: {}
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test RoomKit.slnx -c Release

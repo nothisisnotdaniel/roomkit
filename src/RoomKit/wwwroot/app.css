@@ -1,0 +1,2363 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1c1c1e;
+  --muted: #6e6e73;
+  --card: #f2f2f7;
+  --line: #d1d1d6;
+  --error: #c62828;
+  --link: #0a5ad4;
+  --badge-bg: #e5e5ea;
+  --badge-fg: #3a3a3c;
+  --waiting-bg: #fff1cc;
+  --waiting-fg: #7a4a00;
+  --code-bg: #e5e5ea;
+  --pass-bg: #dff3e6;
+  --pass-fg: #14632f;
+  --changes-bg: #fde6cf;
+  --changes-fg: #8a3d00;
+  --pending-bg: #ececef;
+  --pending-fg: #545458;
+  --human-bg: #fdecee;
+  --human: #b3132b;
+  --accent: #0a5ad4;
+  --danger: #b3132b;
+  --primary-fg: #ffffff;
+  --chart-0: #0a5ad4;
+  --chart-1: #c2410c;
+  --chart-2: #15803d;
+  --chart-3: #7e22ce;
+  --chart-4: #0e7490;
+  --chart-5: #a16207;
+  --category-feature-bg: #dbeafe;
+  --category-feature-fg: #1e3a8a;
+  --category-bug-bg: #fde2e2;
+  --category-bug-fg: #8b1a1a;
+  --category-security-bg: #ede3fb;
+  --category-security-fg: #5b2196;
+  --category-ux-bg: #dcf5e6;
+  --category-ux-fg: #14532d;
+  --category-ui-bg: #fce7f3;
+  --category-ui-fg: #831843;
+  --category-tidy-up-bg: #fef3c7;
+  --category-tidy-up-fg: #713f12;
+  --category-test-bg: #cffafe;
+  --category-test-fg: #164e63;
+  --category-ci-bg: #e0e7ff;
+  --category-ci-fg: #312e81;
+  --category-docs-bg: #e7e5e4;
+  --category-docs-fg: #44403c;
+  --status-done-bg: #dcfce7;
+  --status-done-fg: #14532d;
+  --status-unapproved-bg: #ffedd5;
+  --status-unapproved-fg: #7c2d12;
+  --status-open-bg: #e0f2fe;
+  --status-open-fg: #0c4a6e;
+  --status-user-bg: #f3e8ff;
+  --status-user-fg: #581c87;
+  /* Another machine's claim on a backlog item (factory#54). */
+  --claim-bg: #ccfbf1;
+  --claim-fg: #115e59;
+  /* The two counts on the Backlogs tab: the user's [h] tasks and the unapproved [?] items. */
+  --count-tasks-bg: #6d28d9;
+  --count-tasks-fg: #ffffff;
+  --count-approval-bg: #c2410c;
+  --count-approval-fg: #ffffff;
+  /* The two counts on the Jobs tab: running jobs and jobs blocked on the user (needs-human, red). */
+  --count-running-bg: #0f766e;
+  --count-running-fg: #ffffff;
+  --count-blocked-bg: #991b1b;
+  --count-blocked-fg: #ffffff;
+  /* The bottom tab bar without the home indicator inset; at least the 44px tap target. */
+  --tab-bar-height: 56px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --fg: #f2f2f7;
+    --muted: #98989f;
+    --card: #1c1c1e;
+    --line: #38383a;
+    --error: #ff6b6b;
+    --link: #6cb4ff;
+    --badge-bg: #3a3a3c;
+    --badge-fg: #e5e5ea;
+    --waiting-bg: #4a3500;
+    --waiting-fg: #ffd98a;
+    --code-bg: #2c2c2e;
+    --pass-bg: #17351f;
+    --pass-fg: #7fdc9e;
+    --changes-bg: #3d2812;
+    --changes-fg: #ffb870;
+    --pending-bg: #2c2c2e;
+    --pending-fg: #b5b5ba;
+    --human-bg: #3a1a20;
+    --human: #ff7a8a;
+    --accent: #6cb4ff;
+    --danger: #ff7a8a;
+    --primary-fg: #000000;
+    --chart-0: #6cb4ff;
+    --chart-1: #ff9f5a;
+    --chart-2: #5fd38a;
+    --chart-3: #c99bff;
+    --chart-4: #4fd1e0;
+    --chart-5: #f5c84c;
+    --category-feature-bg: #1e3a5f;
+    --category-feature-fg: #bfdbfe;
+    --category-bug-bg: #4c1d1d;
+    --category-bug-fg: #fecaca;
+    --category-security-bg: #3b1f5c;
+    --category-security-fg: #e9d5ff;
+    --category-ux-bg: #163a24;
+    --category-ux-fg: #bbf7d0;
+    --category-ui-bg: #4a1a35;
+    --category-ui-fg: #fbcfe8;
+    --category-tidy-up-bg: #43330b;
+    --category-tidy-up-fg: #fde68a;
+    --category-test-bg: #0f3a40;
+    --category-test-fg: #a5f3fc;
+    --category-ci-bg: #262a5c;
+    --category-ci-fg: #c7d2fe;
+    --category-docs-bg: #33302d;
+    --category-docs-fg: #e7e5e4;
+    --status-done-bg: #14361f;
+    --status-done-fg: #bbf7d0;
+    --status-unapproved-bg: #4a2511;
+    --status-unapproved-fg: #fed7aa;
+    --status-open-bg: #0c3047;
+    --status-open-fg: #bae6fd;
+    --status-user-bg: #3b1d57;
+    --status-user-fg: #e9d5ff;
+    --claim-bg: #134e4a;
+    --claim-fg: #99f6e4;
+    --count-tasks-bg: #c4b5fd;
+    --count-tasks-fg: #1e1036;
+    --count-approval-bg: #fdba74;
+    --count-approval-fg: #3b1505;
+    --count-running-bg: #5eead4;
+    --count-running-fg: #042f2e;
+    --count-blocked-bg: #f87171;
+    --count-blocked-fg: #450a0a;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  /* The bottom padding keeps the last item clear of the fixed tab bar. */
+  padding: 0 max(12px, env(safe-area-inset-right)) calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px)
+    max(12px, env(safe-area-inset-left));
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.top {
+  max-width: 720px;
+  margin: 0 auto;
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
+/* The connection notice under the header (live.js): one line, fixed text, on every view but the board. */
+.live-notice {
+  max-width: 720px;
+  margin: 0 auto 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--error);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Job and story pages have no header: the notice stays clear of the status bar. */
+.top[hidden] + .live-notice {
+  margin-top: max(8px, env(safe-area-inset-top));
+}
+
+/* The token view replaces every other view, the notice too. */
+body:has(#token:not([hidden])) .live-notice {
+  display: none;
+}
+
+/* The token view has no tab bar, so it needs no room for one. */
+body:has(#token:not([hidden])) {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 12px;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.project {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+}
+
+.project h2 {
+  font-size: 1.25rem;
+  margin: 0 0 8px;
+}
+
+/* Backlogs: one project at a time, picked with a native select; 16px text keeps iOS from zooming. The colour
+   variables follow light and dark mode. */
+.backlog-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.backlog-picker label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.backlog-picker select {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+}
+
+.backlog-picker select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.group {
+  margin: 12px 0 0;
+}
+
+.group summary {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+
+.group summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.group summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.group summary::-webkit-details-marker {
+  display: none;
+}
+
+.group summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.group[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lines li {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.lines li:first-child {
+  border-top: none;
+}
+
+.title {
+  display: block;
+  font-weight: 700;
+}
+
+.title.title-empty {
+  color: var(--muted);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.rest {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.status {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+  margin: 0;
+}
+
+.empty {
+  color: var(--muted);
+  margin: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Numbered items: the whole row opens the story. */
+.numbered {
+  cursor: pointer;
+}
+
+.numbered .head {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  min-height: 28px;
+}
+
+.numbered .title {
+  display: inline;
+}
+
+.mark,
+.badge {
+  display: inline-block;
+  font: 600 0.8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  margin-right: 6px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.badge {
+  font-family: inherit;
+  margin: 0 0 0 6px;
+}
+
+.badge-waiting {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+/* Another machine's claim on a numbered row, after the category chip. Its text is long, so it wraps inside the row
+   on a narrow screen instead of pushing the row wider. */
+.claim-badge {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 6px;
+  margin: 2px 0 0 6px;
+  vertical-align: 1px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--claim-bg);
+  color: var(--claim-fg);
+}
+
+/* A story's category (job.py's Category: line). Each name has its own colour pair in light and dark mode; the chip
+   wraps below the title on a narrow row instead of pushing it off. A story's status chip (#125) has the same style. */
+.category-chip,
+.status-chip {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 6px;
+  margin: 0 0 0 6px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+/* In the story header the gap sits after the category chip, so a status chip that wraps to the next line on a
+   narrow screen starts flush left. */
+.story-title + .category-chip {
+  margin: -4px 6px 12px 0;
+}
+
+.story-title + .status-chip,
+.story-title + .category-chip + .status-chip {
+  margin: -4px 0 12px;
+}
+
+.status-done {
+  background: var(--status-done-bg);
+  color: var(--status-done-fg);
+}
+
+.status-unapproved {
+  background: var(--status-unapproved-bg);
+  color: var(--status-unapproved-fg);
+}
+
+.status-open {
+  background: var(--status-open-bg);
+  color: var(--status-open-fg);
+}
+
+.status-user {
+  background: var(--status-user-bg);
+  color: var(--status-user-fg);
+}
+
+.category-feature {
+  background: var(--category-feature-bg);
+  color: var(--category-feature-fg);
+}
+
+.category-bug {
+  background: var(--category-bug-bg);
+  color: var(--category-bug-fg);
+}
+
+.category-security {
+  background: var(--category-security-bg);
+  color: var(--category-security-fg);
+}
+
+.category-ux {
+  background: var(--category-ux-bg);
+  color: var(--category-ux-fg);
+}
+
+.category-ui {
+  background: var(--category-ui-bg);
+  color: var(--category-ui-fg);
+}
+
+.category-tidy-up {
+  background: var(--category-tidy-up-bg);
+  color: var(--category-tidy-up-fg);
+}
+
+.category-test {
+  background: var(--category-test-bg);
+  color: var(--category-test-fg);
+}
+
+.category-ci {
+  background: var(--category-ci-bg);
+  color: var(--category-ci-fg);
+}
+
+.category-docs {
+  background: var(--category-docs-bg);
+  color: var(--category-docs-fg);
+}
+
+.number {
+  color: var(--muted);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+/* A story's place in its backlog group (#126), next to the status chip: muted like the list's number. */
+.story-position {
+  display: inline-block;
+  margin: -4px 0 12px 6px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+/* A line's place in its group: plain, lighter and right-aligned, so it never reads as the bold "#N". */
+.position {
+  position: relative;
+  display: inline-block;
+  min-width: 1.6em;
+  margin-right: 6px;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.after {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 4px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.dependency {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--link);
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+/* Pending note: backlog edits wait on the backlog branch while a job runs. */
+.backlog-pending {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Project status: last CI result and develop/main count, between the head and the plan. Wraps on narrow screens;
+   a bad CI result is said in its text and only marked by colour. */
+.project-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.project-status .status-ci {
+  font-weight: 600;
+}
+
+.project-status .status-ci-link {
+  color: var(--link);
+}
+
+.project-status .ci-bad,
+.project-status .ci-bad .status-ci-link {
+  color: var(--error);
+}
+
+/* Releases overview: under the status line, muted; the commit list is closed by default. */
+.project-release {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.project-release p {
+  margin: 0;
+}
+
+.project-release .release-next {
+  font-weight: 600;
+}
+
+.project-release .release-note {
+  font-size: 0.85rem;
+}
+
+.project-release .release-log summary {
+  padding: 4px 0;
+  cursor: pointer;
+  color: var(--link);
+}
+
+.project-release .release-commits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-release .release-commit {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  border-top: 1px solid var(--line);
+}
+
+.project-release .release-sha {
+  flex: none;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+.project-release .release-subject {
+  min-width: 0;
+}
+
+.project-release a.release-subject {
+  color: var(--link);
+}
+
+/* Plan: the next item and the Waiting group, between the head and the groups. */
+.plan {
+  margin: 0 0 4px;
+}
+
+.plan .next {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan .next-label {
+  color: var(--muted);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.plan .next-stopped {
+  color: var(--waiting-fg);
+  background: var(--waiting-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
+.plan-item {
+  display: inline;
+  color: var(--link);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.plan-item .title {
+  display: inline;
+}
+
+.badge-spike {
+  background: var(--pending-bg);
+  color: var(--pending-fg);
+}
+
+/* "Auto stops before #N" after the Next item, in the waiting colours (light and dark variables above). */
+.plan .next-stop {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* The auto stop line in the Open list: a dashed rule above its fixed label. In edit mode its handle floats at the
+   start like an item's (44 px) and its edit row follows. */
+.lines li.stop-line {
+  padding: 10px 0;
+  border-top: 2px dashed var(--waiting-fg);
+}
+
+/* Not the drop indicator: a drop below a last-row divider must still show the accent drop line. */
+.lines li.stop-line + li:not(.drop-indicator) {
+  border-top: 2px dashed var(--waiting-fg);
+}
+
+.stop-line-label {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+  font-weight: 600;
+}
+
+.project.editing .stop-line-label {
+  margin-top: 6px;
+}
+
+.dependency-missing {
+  font-weight: 600;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.missing {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* Story view */
+.story-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding: max(8px, env(safe-area-inset-top)) 0 8px;
+}
+
+.story-footer {
+  padding: 16px 0 0;
+}
+
+.back {
+  min-width: 88px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.story {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.story-title:focus {
+  outline: none;
+}
+
+.story-title {
+  font-size: 1.4rem;
+  margin: 0 0 12px;
+}
+
+.story h2,
+.story h3,
+.story h4 {
+  margin: 16px 0 6px;
+}
+
+.story p,
+.story-list {
+  margin: 0 0 10px;
+}
+
+.story-list {
+  padding-left: 22px;
+}
+
+.story code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.story-code {
+  margin: 0 0 10px;
+  padding: 10px;
+  background: var(--code-bg);
+  border-radius: 8px;
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+
+.story-code code {
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+
+/* Bottom tab bar: the five sections in one row on every view and width, an icon over a tiny label. */
+.tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  min-height: var(--tab-bar-height);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+
+.tab-bar a {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 120px;
+  min-height: 44px;
+  padding: 6px 0 4px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tab-bar a[aria-current="page"] {
+  color: var(--link);
+}
+
+.tab-bar a:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+.tab-icon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Jobs board: stages stack on the iPhone and become columns on wide screens. */
+#board,
+.view-board .top {
+  max-width: 1440px;
+}
+
+.board-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.live-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.live-status.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-button {
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.filter-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.stuck {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 2px solid var(--human);
+  border-radius: 12px;
+  background: var(--human-bg);
+}
+
+.stuck > h2 {
+  color: var(--human);
+}
+
+.stuck > h2,
+.stage > h2,
+.stage > summary {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 8px;
+}
+
+.stage > h2,
+.stage > summary {
+  color: var(--muted);
+}
+
+.stage > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.stages {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@media (min-width: 48em) {
+  .stages {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 80em) {
+  .stages {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.stage {
+  min-width: 0;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  display: block;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.card:hover,
+a.card:focus-visible {
+  border-color: var(--accent);
+}
+
+.card-human {
+  border: 2px solid var(--human);
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 8px;
+  font: 0.8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+}
+
+.card-project {
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.card-mode {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-title {
+  display: block;
+  margin: 4px 0 8px;
+  font-weight: 700;
+}
+
+.card-note {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--human);
+  font-size: 0.9rem;
+}
+
+/* Started, ended and duration (or running time); wraps on a narrow phone. */
+.card-times {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.card-facts {
+  margin-left: auto;
+  text-align: right;
+}
+
+.rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.round {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.round.past {
+  opacity: 0.7;
+}
+
+.round-label {
+  min-width: 3.2em;
+  color: var(--muted);
+  font: 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--pending-bg);
+  color: var(--pending-fg);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chip-pass {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+}
+
+.chip-changes {
+  background: var(--changes-bg);
+  color: var(--changes-fg);
+}
+
+.chip-pending {
+  background: var(--pending-bg);
+  color: var(--pending-fg);
+}
+
+.chip-sent {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+.chip-human {
+  background: var(--human-bg);
+  color: var(--human);
+  border: 1px solid var(--human);
+}
+
+.card-request {
+  margin: 0 0 8px;
+}
+
+.chip-human.card-request {
+  margin-right: 6px;
+}
+
+/* Job page */
+.job {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.job-facts {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font: 0.85rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.job-times {
+  display: block;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Right under the facts line, half its gap away. */
+.job-facts + .job-times {
+  margin-top: -6px;
+}
+
+/* Agents: one row per agent with its tokens and time. */
+.job-agents {
+  margin: 0 0 12px;
+}
+
+.job-agents h2 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.agent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.agent {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+/* Job state: stage line, review rows, decision and CI, note. Rows wrap; nothing scrolls sideways. */
+.job-state {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  min-width: 0;
+}
+
+.job-stage {
+  margin: 0;
+  font-weight: 600;
+}
+
+.job-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.85rem;
+}
+
+.job-ci {
+  color: var(--muted);
+}
+
+.job-note {
+  margin: 0;
+  color: var(--human);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.job-state .chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 0 -14px 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  flex: none;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.verdict {
+  margin: 0 0 10px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.record h2,
+.record h3,
+.record h4 {
+  margin: 16px 0 6px;
+}
+
+.record p,
+.record .story-list {
+  margin: 0 0 10px;
+}
+
+.record code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.record .story-code code {
+  background: none;
+  padding: 0;
+}
+
+.story-table {
+  margin: 0 0 10px;
+  overflow-x: auto;
+}
+
+.story-table table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.story-table th,
+.story-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+
+/* Token view: one labelled field and a thumb-sized Save button, mobile first. */
+#token {
+  max-width: 480px;
+  margin: 0 auto;
+  padding-top: max(24px, env(safe-area-inset-top));
+}
+
+.token-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.token-title {
+  margin: 0;
+}
+
+.token-help {
+  margin: 0;
+  color: var(--muted);
+}
+
+.token-help code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--code-bg);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.token-label {
+  font-weight: 600;
+}
+
+.token-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.token-input:focus-visible,
+.token-save:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.token-save {
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Backlog editing: each project has an Edit toggle; its action rows and Add form show only in edit mode. */
+.project-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.project-head h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project:not(.editing) .edit-only {
+  display: none;
+}
+
+.edit-button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--link);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.edit-button:disabled,
+.edit-busy .edit-button {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.edit-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.edit-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--primary-fg);
+}
+
+.edit-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Drag to reorder (edit.js). Only the handle stops the page from scrolling under a finger. */
+.drag-handle {
+  float: left;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -4px 8px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.drag-handle:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.edit-busy .drag-handle {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* The row holds its floated handle; colours come from the light and dark variables above. */
+.project.editing .lines li {
+  display: flow-root;
+}
+
+.lines.drag-list {
+  position: relative;
+}
+
+.lines li.dragging {
+  opacity: 0.55;
+  background: var(--card);
+}
+
+.lines li.dragging .drag-handle {
+  cursor: grabbing;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.lines li.drop-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  margin-top: -2px;
+  padding: 0;
+  border: none;
+  border-top: 4px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.lines li.drop-indicator[hidden] {
+  display: none;
+}
+
+.edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  cursor: default;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.edit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.edit-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+}
+
+textarea.edit-input {
+  resize: vertical;
+}
+
+.edit-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.edit-story-text {
+  font: 0.95rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.edit-add {
+  margin: 12px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.edit-add summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--link);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.story-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The Category select of the story bar: a native select with its visible label. */
+.story-category {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.story-category[hidden] {
+  display: none;
+}
+
+.story-category-select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: inherit;
+  font-size: 16px;
+}
+
+.story-category-select:disabled,
+.edit-busy .story-category-select {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.edit-notice {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 696px;
+  margin: 0 auto;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Keeps the last lines and the Back button reachable above the fixed notice, which sits above the tab bar. */
+body:has(#edit-notice:not([hidden])) {
+  padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px + 72px);
+}
+
+.edit-notice-text {
+  flex: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.edit-notice-error .edit-notice-text {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* Notifications section at the end of the board view. */
+.push {
+  max-width: 640px;
+  margin: 24px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.push-title {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+
+.push-text {
+  margin: 0;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.push-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+.push-actions:empty {
+  display: none;
+}
+
+.push-switch {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.push-switch input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.push-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Version line at the foot of the board view. */
+.app-version {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+/* "Install updates automatically" under the version line. */
+.auto-update {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auto-update-text,
+.auto-update-note {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* The update channel choice under the switch: a native select, large enough to tap. */
+.update-channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.update-channel-select {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: inherit;
+  font-size: 16px;
+}
+
+.update-channel-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Update banner under the board heading. */
+.update {
+  max-width: 640px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.update-text {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.update-command {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+.update-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.update-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--link);
+}
+
+/* The Backlogs tab's two counts as badges on its icon (#135): the [h] tasks on the icon's left in violet, the [?]
+   unapproved items on its right in orange, so they differ by place as well as by colour. */
+.nav-count {
+  position: absolute;
+  top: 2px;
+  min-width: 1.4em;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+.nav-count-tasks {
+  right: calc(50% + 6px);
+  background: var(--count-tasks-bg);
+  color: var(--count-tasks-fg);
+}
+
+.nav-count-approval {
+  left: calc(50% + 6px);
+  background: var(--count-approval-bg);
+  color: var(--count-approval-fg);
+}
+
+/* The Jobs tab's two counts (#138) in the same places: running jobs on the icon's left in teal, jobs blocked on the
+   user (needs-human) on its right in red. */
+.nav-count-running {
+  right: calc(50% + 6px);
+  background: var(--count-running-bg);
+  color: var(--count-running-fg);
+}
+
+.nav-count-blocked {
+  left: calc(50% + 6px);
+  background: var(--count-blocked-bg);
+  color: var(--count-blocked-fg);
+}
+
+/* Search: at the top of the Backlogs (#133), a labelled field and three filters above one card list of results; long
+   titles wrap. While a query is entered the results stand in place of the backlog. The form's own margin is the
+   gap above the backlog. */
+#backlogs.searching > :not(#backlog-search) {
+  display: none;
+}
+
+.search-form {
+  margin: 0 0 12px;
+}
+
+.search-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.search-field,
+.search-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: inherit;
+  font-size: 16px;
+}
+
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Three filters: two share a row at iPhone width and the third wraps below, so no label is cut off. */
+.search-filter {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+
+.search-status {
+  margin: 0 0 8px;
+}
+
+.search-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.search-item {
+  overflow-wrap: anywhere;
+}
+
+.search-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-project {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.search-meta .search-mark {
+  margin: 0;
+}
+
+.search-mark-approval {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+.search-mark-task {
+  background: var(--human-bg);
+  color: var(--human);
+}
+
+.search-mark-done {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+}
+
+.search-head {
+  display: block;
+  font-weight: 700;
+}
+
+.search-found {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.search-unreadable {
+  margin: 0 0 12px;
+}
+
+/* Capture: its own view (#135), a project select and a large text field for a quick idea; 16px text keeps iOS from
+   zooming. */
+.capture-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+.capture-label {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.capture-select,
+.capture-text {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+}
+
+.capture-text {
+  min-height: 9em;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.capture-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.capture-save {
+  align-self: flex-start;
+  min-width: 120px;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--primary-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.capture-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.capture-save:focus-visible,
+.capture-select:focus-visible,
+.capture-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.capture-status {
+  margin: 0 0 8px;
+}
+
+.capture-saved {
+  color: var(--pass-fg);
+  font-weight: 600;
+}
+
+/* History: totals per window, a daily stacked bar chart per mode, then the finished jobs. */
+.history-window,
+.history-chart,
+.history-jobs {
+  margin: 0 0 20px;
+}
+
+.history-heading {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.history-table {
+  width: 100%;
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  background: var(--card);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.history-caption {
+  padding: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.history-table th,
+.history-table td {
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.history-table thead th {
+  border-top: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.history-table tbody th {
+  font-weight: 600;
+}
+
+.history-table .history-number,
+.history-table thead th:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.history-svg {
+  display: block;
+  width: 100%;
+  height: 140px;
+  background: var(--card);
+  border-radius: 12px;
+}
+
+.history-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.history-range {
+  display: flex;
+  justify-content: space-between;
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-legend-total {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.history-colour-0 {
+  fill: var(--chart-0);
+  background: var(--chart-0);
+}
+
+.history-colour-1 {
+  fill: var(--chart-1);
+  background: var(--chart-1);
+}
+
+.history-colour-2 {
+  fill: var(--chart-2);
+  background: var(--chart-2);
+}
+
+.history-colour-3 {
+  fill: var(--chart-3);
+  background: var(--chart-3);
+}
+
+.history-colour-4 {
+  fill: var(--chart-4);
+  background: var(--chart-4);
+}
+
+.history-colour-5 {
+  fill: var(--chart-5);
+  background: var(--chart-5);
+}
+
+.history-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.history-select {
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+}
+
+.history-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.history-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.history-item {
+  overflow-wrap: anywhere;
+}
+
+.history-project {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.history-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--link);
+  font-weight: 700;
+}
+
+.history-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.history-facts .history-outcome {
+  margin: 0;
+}
+
+.history-outcome-merged {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+}
+
+.history-outcome-findings {
+  background: var(--pending-bg);
+  color: var(--pending-fg);
+}
+
+.history-outcome-escalated {
+  background: var(--human-bg);
+  color: var(--human);
+}
+
+.history-outcome-reverted {
+  background: var(--changes-bg);
+  color: var(--changes-fg);
+}
+
+.history-tokens {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Health: one section per kind of problem, each with the fixed text of what /factory doctor would do. */
+.doctor-unreadable {
+  margin: 0 0 12px;
+}
+
+.doctor-section {
+  margin: 0 0 20px;
+}
+
+.doctor-heading {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.doctor-help {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.doctor-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.doctor-item {
+  overflow-wrap: anywhere;
+}
+
+.doctor-project {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.doctor-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--link);
+  font-weight: 700;
+}
+
+.doctor-line,
+.doctor-branch {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.doctor-facts {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* "Your decision" section on a needs-human job page (act.js) */
+.act {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--human);
+  border-radius: 10px;
+  background: var(--human-bg);
+  min-width: 0;
+}
+
+.act-heading {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--human);
+}
+
+.act-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.act-waiting,
+.act-note-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.act-note-text {
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.act-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.act-label {
+  font-weight: 600;
+}
+
+.act-note {
+  width: 100%;
+  min-height: 5em;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.act-note:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.act-status {
+  margin: 0;
+}
