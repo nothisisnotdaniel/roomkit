@@ -224,11 +224,11 @@ public sealed class SampleRoomTests : IDisposable
     internal static string RepoFolder()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);
-        while (current is not null && !File.Exists(Path.Combine(current.FullName, "ControlRoom.slnx")))
+        while (current is not null && !File.Exists(Path.Combine(current.FullName, "RoomKit.slnx")))
         {
             current = current.Parent;
         }
 
-        return current?.FullName ?? throw new InvalidOperationException("ControlRoom.slnx not found");
+        return current?.FullName ?? throw new InvalidOperationException("RoomKit.slnx not found");
     }
 }

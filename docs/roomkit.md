@@ -164,25 +164,41 @@ The Windows updater reads up to ten pages of 100 releases, with a 1 MiB limit pe
 
 ## Feed and versioning
 
-RoomKit has the same version as the ControlRoom release that ships it. The release workflow packs it with
-`dotnet pack src/RoomKit -c Release -p:Version=<version>` and attaches `RoomKit.<version>.nupkg` to that GitHub
-release, for stable releases and prereleases. The package is in `SHA256SUMS` and in the build provenance
-attestation, like the tarball.
+RoomKit has its own SemVer version, independent of the apps that use it. It lives in its own repository,
+`nothisisnotdaniel/roomkit`. A release is a pull request from `develop` into `main` titled `release vX.Y.Z`: once it
+is merged, the release workflow (`.github/workflows/release.yml`) runs the tests on macOS and Windows, packs
+`RoomKit.X.Y.Z.nupkg` with `dotnet pack src/RoomKit -c Release -p:Version=X.Y.Z`, writes `SHA256SUMS`, attests
+the package's build provenance, creates the GitHub release `vX.Y.Z` with the package and `SHA256SUMS`, and pushes
+the package to GitHub Packages. There are no prereleases from `develop`.
 
-An app restores it from a local folder feed, `~/Library/Application Support/RoomKit/feed`:
+The package feed is GitHub Packages:
 
-```sh
-mkdir -p ~/Library/Application\ Support/RoomKit/feed
-gh release download vX.Y.Z --repo nothisisnotdaniel/controlroom --pattern 'RoomKit.*.nupkg' \
-  --dir ~/Library/Application\ Support/RoomKit/feed
+```
+https://nuget.pkg.github.com/nothisisnotdaniel/index.json
 ```
 
-A local build works too: `dotnet pack src/RoomKit -c Release -p:Version=X.Y.Z -o ~/Library/Application\ Support/RoomKit/feed`.
-The app's `nuget.config` names that folder as a package source.
+Its NuGet feed needs a token for every restore, even for public packages. The one-time setup for a consumer:
 
-Why not GitHub Packages: its NuGet feed needs a personal access token with `read:packages` for every restore,
-even for public packages. The app on this Mac and in its CI would need a stored secret, and the release workflow
-would need `packages: write`. The release asset needs no new secret or permission.
+1. Create a classic personal access token with only the `read:packages` scope.
+2. Store it outside every repository, in one of two ways:
+   - as a user-level package source, in the user's own NuGet config (not the app's `nuget.config`):
+
+     ```sh
+     dotnet nuget add source https://nuget.pkg.github.com/nothisisnotdaniel/index.json --name github \
+       --username <github-user> --password <token>
+     ```
+
+   - or as the environment variable `NuGetPackageSourceCredentials_github`, with the value
+     `Username=<github-user>;Password=<token>`, for a source named `github` in the app's `nuget.config`
+     (which then holds only the URL, never a credential).
+3. Never commit the token or a `nuget.config` that holds it.
+
+A consumer's CI needs no stored secret: once the owner has granted that repository access to the package (the
+package's settings, "Manage Actions access"), its workflow uses `permissions: packages: read` and passes the run's
+`GITHUB_TOKEN` as the password, for example through `NuGetPackageSourceCredentials_github`.
+
+A local build works too: `dotnet pack src/RoomKit -c Release -p:Version=X.Y.Z -o <folder>` makes the package in a
+folder that an app can name as a package source while it tries out an unreleased change.
 
 ## Plugging in an app
 

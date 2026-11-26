@@ -17,18 +17,6 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="RoomKit" />
-    <Using Include="ControlRoom.Server.Tests" />
-  </ItemGroup>
-
-  <!-- Shared fixtures, linked from ControlRoom.Server.Tests (not copied). -->
-  <ItemGroup>
-    <Compile Include="..\ControlRoom.Server.Tests\TempFactoryRoot.cs" Link="Shared\TempFactoryRoot.cs" />
-    <Compile Include="..\ControlRoom.Server.Tests\TempTokenFolder.cs" Link="Shared\TempTokenFolder.cs" />
-    <Compile Include="..\ControlRoom.Server.Tests\PushFakes.cs" Link="Shared\PushFakes.cs" />
-    <Compile Include="..\ControlRoom.Server.Tests\PushTestData.cs" Link="Shared\PushTestData.cs" />
-    <Compile Include="..\ControlRoom.Server.Tests\RepoCopy.cs" Link="Shared\RepoCopy.cs" />
-    <Compile Include="..\ControlRoom.Server.Tests\WindowsReleaseFixture.cs" Link="Shared\WindowsReleaseFixture.cs" />
-    <Compile Include="..\ControlRoom.Server.Tests\TestPartsGuardTests.cs" Link="Shared\TestPartsGuardTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

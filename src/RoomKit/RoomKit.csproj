@@ -12,6 +12,8 @@
     <Authors>RoomKit</Authors>
     <Description>The shared core of a factory control app: sign-in, Host check, loopback listening, the web app shell, push, updates, backlogs, search, history and health.</Description>
     <PackageReadmeFile>docs/roomkit.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/nothisisnotdaniel/roomkit</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <!-- The PowerShell files are distributable app scripts. Only the operator invokes them. -->
     <NoWarn>$(NoWarn);NU5110;NU5111</NoWarn>
   </PropertyGroup>

@@ -9,6 +9,8 @@ namespace RoomKit.Tests;
 /// and a package that holds the DLL, the web files and the scripts.</summary>
 public sealed class RoomKitLibraryTests
 {
+    private const string RepositoryUrl = "https://github.com/nothisisnotdaniel/roomkit";
+
     private static readonly string[] AppValues =
         ["ControlRoom", "controlroom", "8100", "state.json", "nothisisnotdaniel", "Control Room"];
 
@@ -43,6 +45,8 @@ public sealed class RoomKitLibraryTests
 
         Assert.Empty(xml.Descendants("ProjectReference"));
         Assert.Empty(xml.Descendants("PackageReference"));
+        Assert.Equal(RepositoryUrl, Assert.Single(xml.Descendants("RepositoryUrl")).Value);
+        Assert.Equal("git", Assert.Single(xml.Descendants("RepositoryType")).Value);
         Assert.Equal(
             ["ControlRoom.Server.Tests", "RoomKit.Tests"],
             xml.Descendants("InternalsVisibleTo").Select(item => (string)item.Attribute("Include")!).Order(StringComparer.Ordinal));
@@ -80,12 +84,11 @@ public sealed class RoomKitLibraryTests
             Assert.True(docs.Contains("`" + type.Name + "`", StringComparison.Ordinal), "docs/roomkit.md misses " + type.Name);
         }
 
-        Assert.Contains("~/Library/Application Support/RoomKit/feed", docs, StringComparison.Ordinal);
-        Assert.Contains(
-            "gh release download vX.Y.Z --repo nothisisnotdaniel/controlroom --pattern 'RoomKit.*.nupkg'",
-            docs,
-            StringComparison.Ordinal);
+        Assert.Contains("https://nuget.pkg.github.com/nothisisnotdaniel/index.json", docs, StringComparison.Ordinal);
         Assert.Contains("read:packages", docs, StringComparison.Ordinal);
+        Assert.Contains("NuGetPackageSourceCredentials_github", docs, StringComparison.Ordinal);
+        Assert.DoesNotContain("--repo nothisisnotdaniel/controlroom", docs, StringComparison.Ordinal);
+        Assert.DoesNotContain("RoomKit/feed", docs, StringComparison.Ordinal);
         Assert.Contains(
             "- `TokenKey`: the localStorage key of the token. Changing it signs out every device.\n",
             docs,
@@ -116,6 +119,9 @@ public sealed class RoomKitLibraryTests
         Assert.Equal("RoomKit", Value(metadata, "id"));
         Assert.Equal("1.2.3", Value(metadata, "version"));
         Assert.Equal("docs/roomkit.md", Value(metadata, "readme"));
+        XElement repository = Assert.Single(metadata.Elements(), element => element.Name.LocalName == "repository");
+        Assert.Equal(RepositoryUrl, (string?)repository.Attribute("url"));
+        Assert.Equal("git", (string?)repository.Attribute("type"));
         Assert.DoesNotContain(metadata.Descendants(), element => element.Name.LocalName == "dependency");
 
         Assert.Contains("lib/net10.0/RoomKit.dll", entries);
