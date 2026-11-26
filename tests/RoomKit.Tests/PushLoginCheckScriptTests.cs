@@ -29,6 +29,16 @@ public sealed class PushLoginCheckScriptTests : IDisposable
     private const string OtherSource =
         "{\"version\": 2, \"problems\": [], \"searchResult\": [{\"sourceName\": \"nuget.org\", \"packages\": []}]}";
 
+    private const string ExtraTextFields =
+        "{\"version\": 2, \"text\": \"leak-top\", \"problems\": [{\"text\": \"Top problem.\", \"problemType\": \"Error\", "
+        + "\"detail\": {\"text\": \"leak-nested\"}}], \"searchResult\": [{\"sourceName\": \"github\", \"text\": \"leak-result\", "
+        + "\"problems\": [{\"text\": \"Result problem.\", \"problemType\": \"Error\"}], "
+        + "\"packages\": [{\"id\": \"RoomKit\", \"text\": \"leak-package\"}]}]}";
+
+    private const string OddProblemTexts =
+        "{\"version\": 2, \"problems\": [{\"problemType\": \"Error\"}, {\"text\": null}, {\"text\": 7}, "
+        + "{\"text\": \"Real problem.\"}], \"searchResult\": []}";
+
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(60);
 
     private readonly string folder =
@@ -59,6 +69,38 @@ public sealed class PushLoginCheckScriptTests : IDisposable
         Assert.DoesNotContain("accepted", output, StringComparison.Ordinal);
         Assert.Contains("GitHub Packages refused the login; nothing was released or pushed\n", error, StringComparison.Ordinal);
         Assert.Contains(problem, error, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetFileSystemEntries(RunnerTemp()));
+    }
+
+    [ShellScriptFact]
+    public void RefusedLogin_PrintsOnlyTheProblemTextsAndNoOtherTextField()
+    {
+        (int code, string output, string error) = Run(ExtraTextFields, 0);
+
+        Assert.Equal(1, code);
+        Assert.Contains("GitHub Packages refused the login; nothing was released or pushed\n", error, StringComparison.Ordinal);
+        Assert.Contains("Top problem.\n", error, StringComparison.Ordinal);
+        Assert.Contains("Result problem.\n", error, StringComparison.Ordinal);
+        foreach (string leak in new[] { "leak-top", "leak-result", "leak-package", "leak-nested" })
+        {
+            Assert.DoesNotContain(leak, output, StringComparison.Ordinal);
+            Assert.DoesNotContain(leak, error, StringComparison.Ordinal);
+        }
+
+        Assert.Empty(Directory.GetFileSystemEntries(RunnerTemp()));
+    }
+
+    [ShellScriptFact]
+    public void ProblemWithoutAStringText_AddsNothingButTheOtherTextsArePrinted()
+    {
+        (int code, _, string error) = Run(OddProblemTexts, 0);
+
+        Assert.Equal(1, code);
+        Assert.Contains("Real problem.\n", error, StringComparison.Ordinal);
+        string[] lines = error.Split('\n');
+        Assert.DoesNotContain("null", lines);
+        Assert.DoesNotContain("7", lines);
+        Assert.Equal(["GitHub Packages refused the login; nothing was released or pushed", "Real problem.", ""], lines);
         Assert.Empty(Directory.GetFileSystemEntries(RunnerTemp()));
     }
 
