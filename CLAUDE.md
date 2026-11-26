@@ -15,7 +15,7 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   never open a real port or read the real factory root: they build temporary roots (`TempFactoryRoot`,
   `TempTokenFolder`) or a repo copy (`RepoCopy`), each in its own temp folder deleted on dispose. Work in another
   process (`dotnet pack`, `/bin/sh`, PowerShell) is awaited for its exit with a named, bounded timeout, never with
-  a delay. Script tests that need `/bin/sh` return early on Windows.
+  a delay. The login check tests are skipped on Windows or without `jq`.
 - **Layout:**
   - `RoomKit.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`,
     `.gitattributes` (LF everywhere), `.gitignore` (`bin/`, `obj/`).

@@ -34,14 +34,9 @@ public sealed class PushLoginCheckScriptTests : IDisposable
     private readonly string folder =
         Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "roomkit-push-check-" + Guid.NewGuid().ToString("N"))).FullName;
 
-    [Fact]
+    [ShellScriptFact]
     public void AcceptedLogin_ExitsZeroAndRemovesTheConfig()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         (int code, string output, _) = Run(Accepted, 0);
 
         Assert.Equal(0, code);
@@ -49,7 +44,7 @@ public sealed class PushLoginCheckScriptTests : IDisposable
         Assert.Empty(Directory.GetFileSystemEntries(RunnerTemp()));
     }
 
-    [Theory]
+    [ShellScriptTheory]
     [InlineData(Refused, "Unable to load the service index for source github.")]
     [InlineData(NoSearch, "The source does not have a search service.")]
     [InlineData(TopLevelProblem, "No source.")]
@@ -58,11 +53,6 @@ public sealed class PushLoginCheckScriptTests : IDisposable
     [InlineData("not json", "")]
     public void RefusedLoginOrAnyProblem_ExitsOneNamesTheProblemAndRemovesTheConfig(string json, string problem)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         (int code, string output, string error) = Run(json, 0);
 
         Assert.Equal(1, code);
@@ -72,28 +62,18 @@ public sealed class PushLoginCheckScriptTests : IDisposable
         Assert.Empty(Directory.GetFileSystemEntries(RunnerTemp()));
     }
 
-    [Fact]
+    [ShellScriptFact]
     public void FailingSearch_ExitsOne()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         (int code, _, _) = Run(Accepted, 3);
 
         Assert.NotEqual(0, code);
         Assert.Empty(Directory.GetFileSystemEntries(RunnerTemp()));
     }
 
-    [Fact]
+    [ShellScriptFact]
     public void Search_GetsTheTempConfigWithThePlaceholderAndNeverTheToken()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         (int code, string output, string error) = Run(Accepted, 0);
 
         Assert.Equal(0, code);
