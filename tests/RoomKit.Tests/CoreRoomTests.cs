@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace RoomKit.Tests;
 
 /// <summary>The process-wide <see cref="RoomContext"/> is the core app's while these run, so they run alone.</summary>
+// Why no parallelism: the other RoomKit tests read RoomContext and expect the SampleRoom one, so any of them running
+// at the same time would see the core app's context and fail at random.
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class CoreRoomCollection
 {
