@@ -169,7 +169,9 @@ RoomKit has its own SemVer version, independent of the apps that use it. It live
 is merged, the release workflow (`.github/workflows/release.yml`) runs the tests on macOS and Windows, packs
 `RoomKit.X.Y.Z.nupkg` with `dotnet pack src/RoomKit -c Release -p:Version=X.Y.Z`, writes `SHA256SUMS`, attests
 the package's build provenance, creates the GitHub release `vX.Y.Z` with the package and `SHA256SUMS`, and pushes
-the package to GitHub Packages. There are no prereleases from `develop`.
+the package to GitHub Packages. There are no `-develop` builds: a push to `develop` publishes nothing, and a
+title with `-develop` is refused. A SemVer prerelease title such as `release v1.3.0-rc.1` is a GitHub prerelease
+and is pushed to GitHub Packages like a release.
 
 The package feed is GitHub Packages:
 
@@ -184,9 +186,15 @@ Its NuGet feed needs a token for every restore, even for public packages. The on
    - as a user-level package source, in the user's own NuGet config (not the app's `nuget.config`):
 
      ```sh
+     read -rs ROOMKIT_TOKEN   # paste the token; it is not echoed and stays out of the shell history
      dotnet nuget add source https://nuget.pkg.github.com/nothisisnotdaniel/index.json --name github \
-       --username <github-user> --password <token>
+       --username <github-user> --password "$ROOMKIT_TOKEN" --store-password-in-clear-text
+     unset ROOMKIT_TOKEN
      ```
+
+     On macOS and Linux NuGet cannot encrypt the password, so it refuses to store it without
+     `--store-password-in-clear-text`, and the token then sits in plain text in `~/.nuget/NuGet/NuGet.Config`.
+     The environment variable below keeps it out of every file.
 
    - or as the environment variable `NuGetPackageSourceCredentials_github`, with the value
      `Username=<github-user>;Password=<token>`, for a source named `github` in the app's `nuget.config`
