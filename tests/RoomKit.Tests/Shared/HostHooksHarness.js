@@ -358,6 +358,8 @@ const scenarios = {
     room.state.changesAnswers.push(changes("j1"));
     const check = room.sandbox.checkChanges();
     await entered.promise;
+    // A few event-loop turns let any refresh that wrongly ran past the held hook show up in the log. This can only
+    // miss a late refresh, never fail at random: no refresh may run until release resolves.
     await drain();
     await drain();
     const whileHeld = [...room.log];
