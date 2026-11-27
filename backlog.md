@@ -18,4 +18,4 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#8](backlog/008-narrow-the-jq-error-output-of.md) Narrow the jq error output of the GitHub Packages login check → 453-narrow-jq-login-output.31198b44615f443ea2acd58283e4a21a
 - [ ] [#11](backlog/011-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85)
 - [ ] [#12](backlog/012-let-a-host-set-the-app.md) Let a host set the app badge on the pushes the server sends
-- [?] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update
+- [ ] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update
