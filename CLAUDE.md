@@ -51,3 +51,6 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   A release is a pull request from `develop` into `main` titled `release vX.Y.Z` (SemVer, no `-develop`). When it
   is merged, `release.yml` tests, packs `RoomKit.X.Y.Z.nupkg`, attests it, checks the GitHub Packages login (an authenticated `dotnet package search`), creates the GitHub release `vX.Y.Z` on
   the merge commit and pushes the package to GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`).
+
+## Lessons
+- Before relying on a file, doc section or symbol the spec names, confirm it exists on develop; if it doesn't, create it or note the gap in build.md.
