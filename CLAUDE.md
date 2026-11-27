@@ -54,5 +54,5 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   the merge commit and pushes the package to GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`).
 
 ## Lessons
-- Before relying on a file, doc section or symbol the spec names, confirm it exists on develop; if it doesn't, create it or note the gap in build.md.
+- Spec and build: before naming or relying on a file, doc section or symbol, confirm it exists on develop. In a spec, say "add" when it doesn't; in a build, create it or note the gap in build.md.
 - Re-wrap any doc, comment or Markdown paragraph you edit to the file's existing wrap width before committing.
