@@ -16,6 +16,6 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#6](backlog/006-release-roomkit-0-2-0-with.md) Release RoomKit 0.2.0 with the host hooks and app badge (after: #5; #10)
 - [x] [#9](backlog/009-mark-the-push-login-check-tests.md) Mark the push login check tests as skipped on Windows → 452-skip-login-tests-windows.d3c6416a9ef5463a82c8453bdcec7f15
 - [x] [#8](backlog/008-narrow-the-jq-error-output-of.md) Narrow the jq error output of the GitHub Packages login check → 453-narrow-jq-login-output.31198b44615f443ea2acd58283e4a21a
-- [ ] [#11](backlog/011-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85)
+- [x] [#11](backlog/011-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85) → 478-skip-ci-backlog-lessons.a3b2facacfb140c9822e6b75cb113223
 - [ ] [#12](backlog/012-let-a-host-set-the-app.md) Let a host set the app badge on the pushes the server sends
 - [ ] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update
