@@ -389,7 +389,8 @@ public sealed class CoreRoomTests : IDisposable
         FakePushHandler handler = new();
         FakePushBadge badge = new(value);
         PushCrypto crypto = new(new FakeTime(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, null);
-        PushSender sender = new(store, crypto, new PushTransport(handler), new LogCapture().For<PushSender>(), badge);
+        LogCapture logs = new();
+        PushSender sender = new(store, crypto, new PushTransport(handler), logs.For<PushSender>(), badge);
 
         int sent = await sender.Send(new PushPayload(PushPayload.Test, null, null, null), CancellationToken.None);
 
@@ -397,6 +398,84 @@ public sealed class CoreRoomTests : IDisposable
         PushRequest request = Assert.Single(handler.Requests);
         Assert.Equal(
             "{\"kind\":\"test\",\"reason\":\"Test notification\"" + expected + "}", receiver.DecryptText(request.Body));
+        Assert.DoesNotContain(logs.Lines, line => line.StartsWith("Push badge timed out", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PushBadge_TimeoutIsTwoSeconds()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(2), PushSender.BadgeTimeout);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PushBadge_AHangingSourceIsCutOffAtTheTimeoutAndThePushGoesOutWithoutABadge(bool sync)
+    {
+        using TempTokenFolder folder = new();
+        using PushReceiver receiver = new();
+        FakePushHandler handler = new();
+        LogCapture logs = new();
+        FakeTime time = new();
+        using FakePushBadge badge = new(3) { Hang = sync ? BadgeHang.Sync : BadgeHang.Async, Fail = "secret /Users/someone" };
+        PushSender sender = HangingSender(folder, receiver, handler, logs, badge, time);
+
+        Task<int> send = sender.Send(new PushPayload(PushPayload.Test, null, null, null), CancellationToken.None);
+        await time.WaitForTimer(PushSender.BadgeTimeout);
+        await badge.WaitForCall();
+        Assert.False(send.IsCompleted);
+        Assert.False(badge.Token.IsCancellationRequested);
+        Assert.Equal(1, time.Fire(PushSender.BadgeTimeout));
+        int sent = await send.WaitAsync(FakeUpdateHandler.WaitLimit);
+
+        Assert.Equal(1, sent);
+        PushRequest request = Assert.Single(handler.Requests);
+        Assert.Equal("{\"kind\":\"test\",\"reason\":\"Test notification\"}", receiver.DecryptText(request.Body));
+        Assert.True(badge.Token.IsCancellationRequested);
+        Assert.Contains(time.Timers, timer => timer.Due == PushSender.BadgeTimeout);
+        Assert.Contains(
+            logs.Lines, line => line.StartsWith("Push badge timed out; sent without a badge", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Lines, line => line.StartsWith("Push badge failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Lines, line => line.Contains("secret", StringComparison.Ordinal));
+        Assert.Equal(1, badge.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PushBadge_CancellingTheCallerWhileTheSourceHangsThrowsAndSendsNothing(bool sync)
+    {
+        using TempTokenFolder folder = new();
+        using PushReceiver receiver = new();
+        FakePushHandler handler = new();
+        LogCapture logs = new();
+        FakeTime time = new();
+        using FakePushBadge badge = new(3) { Hang = sync ? BadgeHang.Sync : BadgeHang.Async };
+        using CancellationTokenSource caller = new();
+        PushSender sender = HangingSender(folder, receiver, handler, logs, badge, time);
+
+        Task<int> send = sender.Send(new PushPayload(PushPayload.Test, null, null, null), caller.Token);
+        await time.WaitForTimer(PushSender.BadgeTimeout);
+        await badge.WaitForCall();
+        await caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send.WaitAsync(FakeUpdateHandler.WaitLimit));
+        Assert.Empty(handler.Requests);
+        Assert.True(badge.Token.IsCancellationRequested);
+        Assert.DoesNotContain(logs.Lines, line => line.StartsWith("Push badge", StringComparison.Ordinal));
+    }
+
+    /// <summary>A sender over one stored subscription for <paramref name="receiver"/>, with the badge source and the
+    /// manual clock.</summary>
+    private static PushSender HangingSender(
+        TempTokenFolder folder, PushReceiver receiver, FakePushHandler handler, LogCapture logs, FakePushBadge badge,
+        FakeTime time)
+    {
+        PushStore store = new(Path.Combine(folder.Path, "push"));
+        Assert.True(store.Subscribe(new PushSubscription(
+            PushTestData.AppleEndpoint, Base64Url.Encode(receiver.PublicKey), Base64Url.Encode(receiver.Auth))));
+        PushCrypto crypto = new(new FakeTime(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, null);
+        return new PushSender(store, crypto, new PushTransport(handler), logs.For<PushSender>(), badge, time);
     }
 
     [Fact]

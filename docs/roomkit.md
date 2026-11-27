@@ -175,8 +175,10 @@ RoomKit's server sends then ends with `badge`: the factory module's pushes, an a
 the update pushes. The push sender calls `Current` once per send, only when there is at least one subscription, and
 sends the same body to every subscription. `0` is sent as `"badge":0`, a count above 999 as `999`, and `null` or a
 negative count leaves `badge` out. When the source throws, the push is still sent, without `badge`, and only the
-fixed text `Push badge failed; sent without a badge` is logged, never the exception's message. Without a badge
-source the payloads are unchanged. A second `SetPushBadge` call throws `InvalidOperationException`; `null` throws
+fixed text `Push badge failed; sent without a badge` is logged, never the exception's message. The server waits at
+most 2 s for the count: when that runs out, the token passed to `Current` is cancelled, the push is sent without
+`badge` and only the fixed text `Push badge timed out; sent without a badge` is logged (the source's task is left to
+finish on its own and its result is ignored). Without a badge source the payloads are unchanged. A second `SetPushBadge` call throws `InvalidOperationException`; `null` throws
 `ArgumentNullException`.
 
 ```csharp

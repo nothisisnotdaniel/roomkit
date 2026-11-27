@@ -61,6 +61,7 @@ public sealed class RepoDocsTests
         Assert.Contains("`IPushBadgeSource`", section, StringComparison.Ordinal);
         Assert.Contains("SetPushBadge", section, StringComparison.Ordinal);
         Assert.Contains("Push badge failed; sent without a badge", section, StringComparison.Ordinal);
+        Assert.Contains("Push badge timed out; sent without a badge", section, StringComparison.Ordinal);
     }
 
     [Fact]
