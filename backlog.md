@@ -20,3 +20,4 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#12](backlog/012-let-a-host-set-the-app.md) Let a host set the app badge on the pushes the server sends → 479-push-badge-api.5bba845adb75430bb6b00dceb3c75d05
 - [x] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update → 480-updater-last-check.56efae52ec1749feb4865da7a81a5b84
 - [x] [#14](backlog/014-bound-the-wait-on-a-host.md) Bound the wait on a host badge source before each push → 482-badge-source-timeout.9ae7d5f75430480bad6acb57678e4b4e
+- [ ] [#15](backlog/015-let-drop-remove-approved-backlog-items.md) Let Drop remove approved backlog items too
