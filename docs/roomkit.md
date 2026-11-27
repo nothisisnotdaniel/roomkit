@@ -52,6 +52,12 @@ Every RoomKit app gets the core, with no factory root, job format or git:
 - The static files `app.css`, `sw.js`, `token.js` and `push.js`, and the app's own `wwwroot`.
 - The `version` and `token` commands, `/health`, `/api/version`, the update check with `/api/update` and
   `/api/update/settings`, and push (`/api/push`, subscribe, unsubscribe, settings, test).
+- `GET /api/update` always has a `lastCheck` key: the time of the updater's last check from its `last-check` stamp
+  in the data folder next to the token file, as UTC `yyyy-MM-ddTHH:mm:ssZ` (for example `"2026-03-01T09:30:00Z"`),
+  so an app can show whether the updater still runs. It is `null` when the stamp is missing, or is refused by the
+  updater's private-file rules (a symlink, a directory, not a `0600` regular file of the current user in a `0700`
+  folder, larger than 32 bytes), or does not hold only digits with at most one trailing line break, or lies beyond
+  the date range or later than now. A bad stamp never fails the response, and the server never writes it.
 - The push watcher: every 30 s it asks each registered `IPushSource` for new `PushEvent`s and sends each one once
   per subscription through RoomKit's push sender, and it always sends the updater's result (`updated`,
   `update_failed`, with `notifyUpdate` on). A source that throws loses that scan's events; only a fixed text is
