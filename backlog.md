@@ -19,4 +19,4 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#11](backlog/011-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85) → 478-skip-ci-backlog-lessons.a3b2facacfb140c9822e6b75cb113223
 - [x] [#12](backlog/012-let-a-host-set-the-app.md) Let a host set the app badge on the pushes the server sends → 479-push-badge-api.5bba845adb75430bb6b00dceb3c75d05
 - [x] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update → 480-updater-last-check.56efae52ec1749feb4865da7a81a5b84
-- [?] [#14](backlog/014-bound-the-wait-on-a-host.md) Bound the wait on a host badge source before each push
+- [ ] [#14](backlog/014-bound-the-wait-on-a-host.md) Bound the wait on a host badge source before each push
