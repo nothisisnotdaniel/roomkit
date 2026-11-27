@@ -6,13 +6,21 @@ using Microsoft.Extensions.Logging;
 
 namespace RoomKit.Tests;
 
-/// <summary>A clock fixed at <see cref="Now"/>; its timers never fire, so nothing runs on its own in a test. Each
-/// timer's due time and period are recorded in <see cref="Timers"/>.</summary>
+/// <summary>A clock fixed at <see cref="Now"/>; its timers never fire on their own, so nothing runs by itself in a
+/// test. Each timer's due time and period are recorded in <see cref="Timers"/>; <see cref="WaitForTimer"/> completes
+/// once a timer with a given due time was created, and <see cref="Fire"/> runs the live timers with that due time
+/// when the test says so.</summary>
 internal sealed class FakeTime : TimeProvider
 {
     public static readonly DateTimeOffset Start = new(2026, 3, 1, 9, 30, 0, TimeSpan.Zero);
 
     private readonly ConcurrentQueue<(TimeSpan Due, TimeSpan Period)> timers = new();
+
+    private readonly object gate = new();
+
+    private readonly List<ManualTimer> live = [];
+
+    private readonly List<(TimeSpan Due, TaskCompletionSource Created)> waiters = [];
 
     public IReadOnlyList<(TimeSpan Due, TimeSpan Period)> Timers => timers.ToArray();
 
@@ -31,12 +39,87 @@ internal sealed class FakeTime : TimeProvider
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
-        timers.Enqueue((dueTime, period));
-        return new NeverTimer();
+        ManualTimer timer = new(this, callback, state, dueTime);
+        lock (gate)
+        {
+            timers.Enqueue((dueTime, period));
+            live.Add(timer);
+            foreach ((TimeSpan due, TaskCompletionSource created) in waiters.Where(waiter => waiter.Due == dueTime).ToList())
+            {
+                created.TrySetResult();
+                waiters.Remove((due, created));
+            }
+        }
+
+        return timer;
     }
 
-    private sealed class NeverTimer : ITimer
+    /// <summary>Waits (bounded by <see cref="FakeUpdateHandler.WaitLimit"/>) until a timer due
+    /// <paramref name="due"/> was created.</summary>
+    public Task WaitForTimer(TimeSpan due)
     {
+        lock (gate)
+        {
+            if (timers.Any(timer => timer.Due == due))
+            {
+                return Task.CompletedTask;
+            }
+
+            TaskCompletionSource created = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            waiters.Add((due, created));
+            return created.Task.WaitAsync(FakeUpdateHandler.WaitLimit);
+        }
+    }
+
+    /// <summary>Runs every live (not disposed) timer created with <paramref name="due"/> once; returns how many
+    /// ran.</summary>
+    public int Fire(TimeSpan due)
+    {
+        List<ManualTimer> firing;
+        lock (gate)
+        {
+            firing = live.Where(timer => timer.Due == due).ToList();
+        }
+
+        foreach (ManualTimer timer in firing)
+        {
+            timer.Run();
+        }
+
+        return firing.Count;
+    }
+
+    private void Remove(ManualTimer timer)
+    {
+        lock (gate)
+        {
+            live.Remove(timer);
+        }
+    }
+
+    private sealed class ManualTimer : ITimer
+    {
+        private readonly FakeTime owner;
+
+        private readonly TimerCallback callback;
+
+        private readonly object? state;
+
+        public ManualTimer(FakeTime owner, TimerCallback callback, object? state, TimeSpan due)
+        {
+            this.owner = owner;
+            this.callback = callback;
+            this.state = state;
+            Due = due;
+        }
+
+        public TimeSpan Due { get; }
+
+        public void Run()
+        {
+            callback(state);
+        }
+
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
             return true;
@@ -44,10 +127,12 @@ internal sealed class FakeTime : TimeProvider
 
         public void Dispose()
         {
+            owner.Remove(this);
         }
 
         public ValueTask DisposeAsync()
         {
+            owner.Remove(this);
             return ValueTask.CompletedTask;
         }
     }
@@ -324,10 +409,31 @@ internal sealed class LogCapture : ILoggerProvider
     }
 }
 
-/// <summary>A host badge source a test sets: <see cref="Current"/> returns <see cref="Value"/>, counts its calls and
-/// throws (or returns a faulted task) when <see cref="Fail"/> is set.</summary>
-internal sealed class FakePushBadge : IPushBadgeSource
+/// <summary>How a <see cref="FakePushBadge"/> hangs before it answers.</summary>
+internal enum BadgeHang
 {
+    /// <summary>Answers at once.</summary>
+    None,
+
+    /// <summary>Returns a task that completes only when the fake is disposed.</summary>
+    Async,
+
+    /// <summary>Blocks inside <see cref="FakePushBadge.Current"/> until the fake is disposed.</summary>
+    Sync,
+}
+
+/// <summary>A host badge source a test sets: <see cref="Current"/> returns <see cref="Value"/>, counts its calls and
+/// throws (or returns a faulted task) when <see cref="Fail"/> is set. With <see cref="Hang"/> it does not answer
+/// until it is disposed; <see cref="Token"/> is the token it was given and <see cref="WaitForCall"/> completes once it
+/// was called.</summary>
+internal sealed class FakePushBadge : IPushBadgeSource, IDisposable
+{
+    private readonly ManualResetEventSlim release = new(false);
+
+    private readonly TaskCompletionSource<int?> hung = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly TaskCompletionSource called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private int calls;
 
     public FakePushBadge(int? value)
@@ -343,14 +449,59 @@ internal sealed class FakePushBadge : IPushBadgeSource
     /// <summary>Fail with a faulted task instead of a synchronous throw.</summary>
     public bool Faulted { get; set; }
 
+    /// <summary>Whether (and how) <see cref="Current"/> hangs until the fake is disposed.</summary>
+    public BadgeHang Hang { get; set; }
+
     /// <summary>The services the factory overload built this source from, when it did.</summary>
     public IServiceProvider? BuiltFrom { get; set; }
 
     public int Calls => Volatile.Read(ref calls);
 
+    /// <summary>The token the last <see cref="Current"/> call was given.</summary>
+    public CancellationToken Token { get; private set; }
+
+    /// <summary>Waits (bounded by <see cref="FakeUpdateHandler.WaitLimit"/>) until <see cref="Current"/> was
+    /// called.</summary>
+    public Task WaitForCall()
+    {
+        return called.Task.WaitAsync(FakeUpdateHandler.WaitLimit);
+    }
+
     public Task<int?> Current(CancellationToken cancellation)
     {
         Interlocked.Increment(ref calls);
+        Token = cancellation;
+        called.TrySetResult();
+        if (Hang == BadgeHang.Async)
+        {
+            return hung.Task;
+        }
+
+        if (Hang == BadgeHang.Sync)
+        {
+            release.Wait(CancellationToken.None);
+        }
+
+        return Answer();
+    }
+
+    /// <summary>Releases a hanging <see cref="Current"/>: it then answers (or fails) as it would have at once.</summary>
+    public void Dispose()
+    {
+        if (Fail is not null)
+        {
+            hung.TrySetException(new InvalidOperationException(Fail));
+        }
+        else
+        {
+            hung.TrySetResult(Value);
+        }
+
+        release.Set();
+    }
+
+    private Task<int?> Answer()
+    {
         if (Fail is not null)
         {
             if (Faulted)
