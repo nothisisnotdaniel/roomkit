@@ -32,9 +32,10 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
     `HostHooksScriptTests` runs `Shared/HostHooksHarness.js` with `node` (needs `node` on PATH): it loads the real
     `counts.js` and `live.js` into a `node:vm` context with stub globals to check the host hook registry.
     `BadgeScriptTests` runs `Shared/BadgeHarness.js` the same way: it loads the real `sw.js` and `push.js` with a
-    fake Badging API to check the push `badge` field and `setRoomKitBadge`. `CiChangesScriptTests` copies the
-    three `.github/scripts` Python files into a temp folder and runs `test_ci_changes.py` with
-    `python3 -m unittest`.
+    fake Badging API to check the push `badge` field and `setRoomKitBadge`. `EditRowScriptTests` runs
+    `Shared/EditRowHarness.js` the same way: it loads the real `edit.js` to check `editRow`'s buttons, confirm
+    texts, requests and edit notice. `CiChangesScriptTests` copies the three `.github/scripts` Python files into
+    a temp folder and runs `test_ci_changes.py` with `python3 -m unittest`.
   - `docs/roomkit.md`: the library's docs (the package readme).
   - `.github/workflows/ci.yml` (for PRs into and pushes to `develop`: a `changes` job on Ubuntu runs
     `.github/scripts/ci_changes.py`, and the `test` job on macOS and Windows runs only when something other than

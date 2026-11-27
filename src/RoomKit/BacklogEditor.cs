@@ -140,10 +140,11 @@ public static partial class BacklogEditor
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
-    /// <summary>Removes a <c>[?]</c> line; the caller removes its story file.</summary>
+    /// <summary>Removes a <c>[?]</c> or <c>[ ]</c> line; the caller removes its story file and checks
+    /// <see cref="WaitedOn"/> first.</summary>
     public static BacklogEdit? Drop(EditableText text, int line)
     {
-        if (!IsMark(text, line, '?'))
+        if (!IsMark(text, line, '?') && !IsMark(text, line, ' '))
         {
             return null;
         }
@@ -151,6 +152,47 @@ public static partial class BacklogEditor
         List<string> lines = [.. text.Lines];
         lines.RemoveAt(line);
         return new BacklogEdit(text.With(lines), Subject(text, line));
+    }
+
+    /// <summary>True when <paramref name="line"/> is numbered and another item line that is not done (any mark
+    /// but <c>x</c>/<c>X</c>) waits for that number in its <c>(after: …)</c>: a <c>#N</c> or a
+    /// <c>&lt;Project&gt;#N</c> whose project is <paramref name="projectName"/> (ignoring case). References may be
+    /// separated by <c>,</c>, <c>;</c> or spaces, as <c>job.py</c> reads them.</summary>
+    public static bool WaitedOn(EditableText text, int line, string projectName)
+    {
+        if (NumberedEntry(text, line)?.Number is not int number)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < text.Lines.Count; i++)
+        {
+            if (i == line || !IsOpenItem(text, i))
+            {
+                continue;
+            }
+
+            string content = EditableText.Content(text.Lines[i])[6..];
+            int tail = content.IndexOf(" → ", StringComparison.Ordinal);
+            Match clause = AfterClause().Match(tail < 0 ? content : content[..tail]);
+            if (!clause.Success)
+            {
+                continue;
+            }
+
+            foreach (Match reference in AfterReference().Matches(clause.Groups["refs"].Value))
+            {
+                string project = reference.Groups["project"].Value;
+                if (BacklogParser.TryParseNumber(reference.Groups["number"].Value, out int waited)
+                    && waited == number
+                    && (project.Length == 0 || string.Equals(project, projectName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Moves an open line: <c>Top</c> puts it before the first item that is not done, or before the stop
@@ -793,6 +835,13 @@ public static partial class BacklogEditor
 
     [GeneratedRegex(@"\A\[#(?<number>[0-9]{1,9})\]\([^)\s]+\)", RegexOptions.CultureInvariant)]
     private static partial Regex LineNumber();
+
+    [GeneratedRegex(@"\(after:(?<refs>[^()]*)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex AfterClause();
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_.#-])(?:(?<project>[A-Za-z0-9._-]+)#|#)(?<number>[0-9]{1,9})(?![0-9])",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex AfterReference();
 
     [GeneratedRegex(@"\A(?<number>[0-9]{1,9})-", RegexOptions.CultureInvariant)]
     private static partial Regex FileNumber();

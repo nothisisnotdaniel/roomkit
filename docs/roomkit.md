@@ -90,6 +90,11 @@ and `POST /api/backlog/change` is `405`), `edit.js`, `counts.js`, `search.js`, `
   and the backlog write lock.
 - The endpoints `/api/backlogs`, `/api/backlog/change` (`POST`), `/api/story`, `/api/search`, `/api/inbox`,
   `/api/tasks`, `/api/history` and `/api/doctor`.
+- The `drop` action of `/api/backlog/change` (`BacklogEditor.Drop`) removes a `[?]` or `[ ]` line and its story
+  file in one commit (`backlog: drop #N`). It is refused as `409 waited_on` before anything is written when
+  `BacklogEditor.WaitedOn` finds another open line of the same backlog with `(after: #N)` (or
+  `(after: <Project>#N)` naming this project, ignoring case); a `[x]` line's wait does not count. In `edit.js`,
+  Drop shows on `[?]` and `[ ]` rows, each with its own confirm text.
 - The web files `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`.
 - The job and backlog push source: a job moving into a blocked stage, into the done stage (with `notifyDone`) and
   a new `[?]` backlog line.
