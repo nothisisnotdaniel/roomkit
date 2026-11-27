@@ -8,14 +8,15 @@ namespace RoomKit.Tests;
 /// <summary>Hosts the sample app in memory (no real port) like <c>ServerFactory</c>, with the factory module: <c>FactoryRoot</c> is the given
 /// temp root, the token file sits in its own temp folder (deleted on dispose), pushes go to <see cref="Push"/>, the
 /// update check to <see cref="Update"/>, and the clock is <see cref="Time"/>, whose timers never fire. Clients send
-/// <c>Host: 127.0.0.1:8201</c>.</summary>
+/// <c>Host: 127.0.0.1:8201</c>. A given <paramref name="badge"/> is set through the public service hook.</summary>
 internal sealed class SampleServerFactory : IAsyncDisposable
 {
     private readonly TempTokenFolder tokenFolder = new();
 
     private readonly WebApplication app;
 
-    public SampleServerFactory(string factoryRoot, string environment = "Production", Action<RoomRoutes>? map = null)
+    public SampleServerFactory(string factoryRoot, string environment = "Production", Action<RoomRoutes>? map = null,
+        IPushBadgeSource? badge = null)
     {
         TokenFile = Path.Combine(tokenFolder.Path, "SampleRoom", AccessToken.FileName);
         StringWriter error = new();
@@ -33,7 +34,7 @@ internal sealed class SampleServerFactory : IAsyncDisposable
             map ?? SampleRoom.Map,
             null,
             new FactoryModule(SampleRoom.Jobs),
-            null,
+            badge is null ? null : services => services.SetPushBadge(badge),
             builder =>
             {
                 builder.WebHost.UseTestServer();

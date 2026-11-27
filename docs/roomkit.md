@@ -25,7 +25,8 @@ factory keeps jobs (`IJobFormat`); an app without a factory (for example PRWatch
 The public types are few. Most of the code is `internal`. The public ones are:
 
 - The plug-in API: `RoomKitApp`, `RoomKitOptions`, `RoomRoutes`, `RoomServices` (the hook that adds services and
-  push sources before the host is built), `IPushSource` and `PushEvent` (an app's own push notifications).
+  push sources before the host is built), `IPushSource` and `PushEvent` (an app's own push notifications) and
+  `IPushBadgeSource` (the app badge count on every push, see App badge).
 - The factory module: `FactoryModule`, `IJobFormat`, `RoomJob`, `RoomJobFolder` and `FactoryRoot` (the factory root
   an endpoint gets from the services).
 - Backlog reading and editing that an app's own endpoints use: `Backlog`, `BacklogEntry`, `BacklogDependency`,
@@ -161,6 +162,21 @@ While the app is open, a host script can call `setRoomKitBadge(count)` from `pus
 clears it, and any other value does nothing. It returns a promise that resolves to `true` when the Badging call was
 made and settled, and to `false` otherwise (an invalid value, no Badging API, or a failed call); it never throws or
 rejects. Loading `push.js` does not touch the badge.
+
+To keep the badge current while the app is closed, a host sets one `IPushBadgeSource` in the `addServices` hook with
+`services.SetPushBadge(source)` or `services.SetPushBadge(provider => …)` (built from the app's services). Every push
+RoomKit's server sends then ends with `badge`: the factory module's pushes, an app's `PushEvent`s, the test push and
+the update pushes. The push sender calls `Current` once per send, only when there is at least one subscription, and
+sends the same body to every subscription. `0` is sent as `"badge":0`, a count above 999 as `999`, and `null` or a
+negative count leaves `badge` out. When the source throws, the push is still sent, without `badge`, and only the
+fixed text `Push badge failed; sent without a badge` is logged, never the exception's message. Without a badge
+source the payloads are unchanged. A second `SetPushBadge` call throws `InvalidOperationException`; `null` throws
+`ArgumentNullException`.
+
+```csharp
+return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Map,
+    addServices: services => services.SetPushBadge(provider => new OpenItemsBadge(provider)));
+```
 
 ## Host hooks
 

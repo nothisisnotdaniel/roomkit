@@ -1,5 +1,7 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace RoomKit.Tests;
 
@@ -205,6 +207,31 @@ public sealed class SampleRoomTests : IDisposable
             sent.Select(payload => payload.Kind + ":" + payload.Job + ":" + payload.Stage));
         Assert.Equal(2, handler.Requests.Count);
         Assert.Empty(await watcher.Scan());
+    }
+
+    [Fact]
+    public async Task PushBadge_IsAddedLastToTheFactoryNeedsHumanPush()
+    {
+        FakePushBadge badge = new(2);
+        SampleJobFormat.Write(root.Path, "4-feature", "plan", Start);
+        await using SampleServerFactory factory = new(root.Path, badge: badge);
+        HttpClient client = await factory.TokenClient();
+        using PushReceiver receiver = new();
+        (await PushTestData.Subscribe(client, receiver, PushTestData.AppleEndpoint)).Dispose();
+        PushWatcher watcher = factory.Services.GetRequiredService<PushWatcher>();
+        await watcher.Scan();
+
+        SampleJobFormat.Write(root.Path, "4-feature", "wait", Start);
+        IReadOnlyList<PushPayload> sent = await watcher.Scan();
+
+        PushPayload payload = Assert.Single(sent);
+        Assert.Equal(PushPayload.NeedsHuman, payload.Kind);
+        string usual = Encoding.UTF8.GetString(payload.ToJson());
+        PushRequest request = Assert.Single(factory.Push.Requests);
+        Assert.Equal(usual[..^1] + ",\"badge\":2}", receiver.DecryptText(request.Body));
+        Assert.StartsWith("{\"kind\":\"needs-human\",", usual, StringComparison.Ordinal);
+        Assert.Contains("\"job\":\"4-feature\",\"stage\":\"wait\",\"reason\":\"Needs you\"}", usual, StringComparison.Ordinal);
+        Assert.Equal(1, badge.Calls);
     }
 
     [Fact]

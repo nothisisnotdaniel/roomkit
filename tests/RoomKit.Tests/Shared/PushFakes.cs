@@ -323,3 +323,44 @@ internal sealed class LogCapture : ILoggerProvider
         }
     }
 }
+
+/// <summary>A host badge source a test sets: <see cref="Current"/> returns <see cref="Value"/>, counts its calls and
+/// throws (or returns a faulted task) when <see cref="Fail"/> is set.</summary>
+internal sealed class FakePushBadge : IPushBadgeSource
+{
+    private int calls;
+
+    public FakePushBadge(int? value)
+    {
+        Value = value;
+    }
+
+    public int? Value { get; set; }
+
+    /// <summary>When set, <see cref="Current"/> fails with an exception with this message.</summary>
+    public string? Fail { get; set; }
+
+    /// <summary>Fail with a faulted task instead of a synchronous throw.</summary>
+    public bool Faulted { get; set; }
+
+    /// <summary>The services the factory overload built this source from, when it did.</summary>
+    public IServiceProvider? BuiltFrom { get; set; }
+
+    public int Calls => Volatile.Read(ref calls);
+
+    public Task<int?> Current(CancellationToken cancellation)
+    {
+        Interlocked.Increment(ref calls);
+        if (Fail is not null)
+        {
+            if (Faulted)
+            {
+                return Task.FromException<int?>(new InvalidOperationException(Fail));
+            }
+
+            throw new InvalidOperationException(Fail);
+        }
+
+        return Task.FromResult(Value);
+    }
+}
