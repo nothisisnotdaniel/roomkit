@@ -22,4 +22,3 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#14](backlog/014-bound-the-wait-on-a-host.md) Bound the wait on a host badge source before each push → 482-badge-source-timeout.9ae7d5f75430480bad6acb57678e4b4e
 - [x] [#15](backlog/015-let-drop-remove-approved-backlog-items.md) Let Drop remove approved backlog items too → 493-drop-approved-items.833a847fb22a42529e098f713377cb6f
 - [ ] [#16](backlog/016-name-the-waiting-item-when-a.md) Name the waiting item when a drop is refused
-- [ ] [#17](backlog/017-skip-the-node-script-tests-when.md) Skip the node script tests when node is missing
