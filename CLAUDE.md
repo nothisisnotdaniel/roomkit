@@ -15,7 +15,8 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
   never open a real port or read the real factory root: they build temporary roots (`TempFactoryRoot`,
   `TempTokenFolder`) or a repo copy (`RepoCopy`), each in its own temp folder deleted on dispose. Work in another
   process (`dotnet pack`, `/bin/sh`, PowerShell) is awaited for its exit with a named, bounded timeout, never with
-  a delay. The login check tests are skipped on Windows or without `jq`.
+  a delay. The login check tests are skipped on Windows or without `jq`; `CiChangesScriptTests` is skipped on
+  Windows or without `python3` on PATH.
 - **Layout:**
   - `RoomKit.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`,
     `.gitattributes` (LF everywhere), `.gitignore` (`bin/`, `obj/`).
@@ -24,16 +25,22 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
     `updater.sh`/`.ps1`, packed into the package).
   - `tests/RoomKit.Tests/`: the tests, the sample apps (`SampleRoom`, `CoreRoom`) and `Shared/` (fixtures:
     `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData`, `RepoCopy`, `WindowsReleaseFixture` and
-    its `.ps1`). `WorkflowTests` reads the two workflows as text, `ReleaseVersionScriptTests` runs the release
-    script, `PushLoginCheckScriptTests` runs the release job's GitHub Packages login check (with a fake `dotnet`
-    and `jq`), `RepoDocsTests` checks this file and `docs/roomkit.md`, `SourceScanTests` scans
+    its `.ps1`, the skip attributes `ShellScriptFact`/`PythonFact`). `WorkflowTests` reads the two workflows as
+    text, `ReleaseVersionScriptTests` runs the release script, `PushLoginCheckScriptTests` runs the release job's
+    GitHub Packages login check (with a fake `dotnet` and `jq`), `RepoDocsTests` checks this file and `docs/roomkit.md`, `SourceScanTests` scans
     `AccessToken.cs` and `ProjectGit.cs` as text (fixed-time compare, fixed read-only git calls, no network).
     `HostHooksScriptTests` runs `Shared/HostHooksHarness.js` with `node` (needs `node` on PATH): it loads the real
     `counts.js` and `live.js` into a `node:vm` context with stub globals to check the host hook registry.
     `BadgeScriptTests` runs `Shared/BadgeHarness.js` the same way: it loads the real `sw.js` and `push.js` with a
-    fake Badging API to check the push `badge` field and `setRoomKitBadge`.
+    fake Badging API to check the push `badge` field and `setRoomKitBadge`. `CiChangesScriptTests` copies the
+    three `.github/scripts` Python files into a temp folder and runs `test_ci_changes.py` with
+    `python3 -m unittest`.
   - `docs/roomkit.md`: the library's docs (the package readme).
-  - `.github/workflows/ci.yml` (tests on macOS and Windows for PRs into and pushes to `develop`),
+  - `.github/workflows/ci.yml` (for PRs into and pushes to `develop`: a `changes` job on Ubuntu runs
+    `.github/scripts/ci_changes.py`, and the `test` job on macOS and Windows runs only when something other than
+    `backlog.md`, `backlog/` or a `CLAUDE.md`'s `## Lessons` section changed, or on any doubt; a skipped run is
+    still green). `ci_changes.py` is a copy of the factory's `factory/tools/ci_changes.py` with root-level
+    backlog paths; `test_ci_changes.py` and `git_identity.py` are its tests (standard library only).
     `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (the release, see Git).
 - **Style:** C# with file-scoped namespaces (`RoomKit`, tests `RoomKit.Tests`), `sealed` classes, explicit types
   where the repo uses them, `StringComparison.Ordinal` for every string compare, XML doc summaries on public types.
