@@ -19,12 +19,13 @@ internal sealed record UpdateSettingsChange(bool? AutoUpdate, string? Channel, i
 /// check found a newer release on the current channel, its version, release page and the command that installs it
 /// (with <c>--tailnet-host</c> when <c>TailnetHost</c> is set), plus the <c>autoUpdate</c>, <c>channel</c> and
 /// <c>updateInterval</c> settings and <c>lastCheck</c>, the updater's <c>last-check</c> stamp as UTC
-/// <c>yyyy-MM-ddTHH:mm:ssZ</c> (<c>null</c> when missing, refused or later than now). <c>POST /api/update/settings</c> with an object of one or more of
-/// <c>autoUpdate</c> (boolean), <c>channel</c> (<c>"stable"</c> or <c>"develop"</c>) and <c>updateInterval</c> (an
-/// integer among the <see cref="UpdateInterval"/> choices) stores them (else <c>400 {"error":"invalid"}</c>, checked
-/// before the store) and answers the three values; a refused <c>settings.json</c> gives <c>500
-/// {"error":"settings_store"}</c>. A changed channel starts one update check without waiting for it (skipped while
-/// one runs); an interval change starts none. Both <c>no-store</c>.</summary>
+/// <c>yyyy-MM-ddTHH:mm:ssZ</c> (<c>null</c> when missing, refused or later than now). <c>POST
+/// /api/update/settings</c> with an object of one or more of <c>autoUpdate</c> (boolean), <c>channel</c>
+/// (<c>"stable"</c> or <c>"develop"</c>) and <c>updateInterval</c> (an integer among the <see cref="UpdateInterval"/>
+/// choices) stores them (else <c>400 {"error":"invalid"}</c>, checked before the store) and answers the three values;
+/// a refused <c>settings.json</c> gives <c>500 {"error":"settings_store"}</c>. A changed channel starts one update
+/// check without waiting for it (skipped while one runs); an interval change starts none. Both
+/// <c>no-store</c>.</summary>
 internal static class UpdateEndpoint
 {
     public const string Route = "/api/update";
