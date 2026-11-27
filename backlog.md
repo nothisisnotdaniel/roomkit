@@ -19,3 +19,4 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [stop] Auto stops here
 - [ ] [#11](backlog/011-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85)
 - [?] [#12](backlog/012-let-a-host-set-the-app.md) Let a host set the app badge on the pushes the server sends
+- [?] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update
