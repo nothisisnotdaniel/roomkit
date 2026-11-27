@@ -54,3 +54,4 @@ Every factory agent reads this file before working on RoomKit. Keep it short and
 
 ## Lessons
 - Before relying on a file, doc section or symbol the spec names, confirm it exists on develop; if it doesn't, create it or note the gap in build.md.
+- Re-wrap any doc, comment or Markdown paragraph you edit to the file's existing wrap width before committing.
