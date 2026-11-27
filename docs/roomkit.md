@@ -178,8 +178,8 @@ negative count leaves `badge` out. When the source throws, the push is still sen
 fixed text `Push badge failed; sent without a badge` is logged, never the exception's message. The server waits at
 most 2 s for the count: when that runs out, the token passed to `Current` is cancelled, the push is sent without
 `badge` and only the fixed text `Push badge timed out; sent without a badge` is logged (the source's task is left to
-finish on its own and its result is ignored). Without a badge source the payloads are unchanged. A second `SetPushBadge` call throws `InvalidOperationException`; `null` throws
-`ArgumentNullException`.
+finish on its own and its result is ignored). Without a badge source the payloads are unchanged. A second
+`SetPushBadge` call throws `InvalidOperationException`; `null` throws `ArgumentNullException`.
 
 ```csharp
 return RoomKitApp.Run(args, MyRoomApp.Options, MyRoomApp.Map,
