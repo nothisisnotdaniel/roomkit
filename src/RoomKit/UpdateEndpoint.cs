@@ -4,10 +4,12 @@ namespace RoomKit;
 
 /// <summary>The <c>GET /api/update</c> response; <c>latest</c>, <c>url</c> and <c>command</c> are <c>null</c> unless
 /// <c>available</c>; <c>autoUpdate</c>, <c>channel</c> and <c>updateInterval</c> are <c>null</c> when
-/// <c>settings.json</c> is refused.</summary>
+/// <c>settings.json</c> is refused; <c>lastCheck</c> is the updater's last check (<see cref="LastCheckReader"/>) or
+/// <c>null</c>.</summary>
 internal sealed record UpdateResponse(
     string Current, bool Available, string? Latest, string? Url, string? Command, bool? AutoUpdate = false,
-    string? Channel = UpdateChannel.Stable, int? UpdateInterval = RoomKit.UpdateInterval.Default);
+    string? Channel = UpdateChannel.Stable, int? UpdateInterval = RoomKit.UpdateInterval.Default,
+    string? LastCheck = null);
 
 /// <summary>The wanted change of a <c>POST /api/update/settings</c> body; a <c>null</c> value keeps the stored
 /// one.</summary>
@@ -16,7 +18,8 @@ internal sealed record UpdateSettingsChange(bool? AutoUpdate, string? Channel, i
 /// <summary>The update routes, behind the token gate. <c>GET /api/update</c>: the running version and, when the last
 /// check found a newer release on the current channel, its version, release page and the command that installs it
 /// (with <c>--tailnet-host</c> when <c>TailnetHost</c> is set), plus the <c>autoUpdate</c>, <c>channel</c> and
-/// <c>updateInterval</c> settings. <c>POST /api/update/settings</c> with an object of one or more of
+/// <c>updateInterval</c> settings and <c>lastCheck</c>, the updater's <c>last-check</c> stamp as UTC
+/// <c>yyyy-MM-ddTHH:mm:ssZ</c> (<c>null</c> when missing, refused or later than now). <c>POST /api/update/settings</c> with an object of one or more of
 /// <c>autoUpdate</c> (boolean), <c>channel</c> (<c>"stable"</c> or <c>"develop"</c>) and <c>updateInterval</c> (an
 /// integer among the <see cref="UpdateInterval"/> choices) stores them (else <c>400 {"error":"invalid"}</c>, checked
 /// before the store) and answers the three values; a refused <c>settings.json</c> gives <c>500
@@ -33,7 +36,8 @@ internal static class UpdateEndpoint
     public static void Map(WebApplication app, string? tailnetHost, string? factoryRoot)
     {
         app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (
-            UpdateState state, RunningVersion running, UpdateSettingsStore settings, HttpContext context) =>
+            UpdateState state, RunningVersion running, UpdateSettingsStore settings, LastCheckReader lastCheck,
+            TimeProvider time, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             UpdateSettings? stored;
@@ -49,7 +53,8 @@ internal static class UpdateEndpoint
             // A refused file checks on stable (UpdateChecker.Channel), so only a stable result is shown then.
             string channel = stored?.Channel ?? UpdateChannel.Stable;
             return Results.Json(Describe(state.Latest, running.Value, tailnetHost, channel, factoryRoot)
-                with { AutoUpdate = stored?.AutoUpdate, Channel = stored?.Channel, UpdateInterval = stored?.UpdateInterval });
+                with { AutoUpdate = stored?.AutoUpdate, Channel = stored?.Channel, UpdateInterval = stored?.UpdateInterval,
+                    LastCheck = lastCheck.Read(time.GetUtcNow()) });
         });
 
         app.MapPost(SettingsRoute, async (UpdateSettingsStore settings, UpdateChecker checker, HttpContext context) =>

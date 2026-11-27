@@ -64,6 +64,17 @@ public sealed class RepoDocsTests
     }
 
     [Fact]
+    public void Docs_NameLastCheck_ItsFormatAndNullCases()
+    {
+        string docs = Read(Path.Combine("docs", "roomkit.md"));
+
+        Assert.Contains("`lastCheck`", docs, StringComparison.Ordinal);
+        Assert.Contains("`yyyy-MM-ddTHH:mm:ssZ`", docs, StringComparison.Ordinal);
+        Assert.Contains("`last-check`", docs, StringComparison.Ordinal);
+        Assert.Contains("It is `null` when the stamp is missing", docs, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Repo_HoldsNoNuGetConfig()
     {
         string repo = RepoCopy.RepoFolder();
