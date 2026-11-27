@@ -1,9 +1,9 @@
 "use strict";
 
-// Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add, the auto
-// stop line), the story editor, Add note, the story's Category select and Done of a [h] story. Every change
-// is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed texts are shown;
-// server text never is. Uses element() and the views' reload functions from app.js at call time.
+// Backlog editing: per-project edit mode (approve, drop a [?] or [ ] line, move by drag or arrow keys, to top, edit
+// title, add, the auto stop line), the story editor, Add note, the story's Category select and Done of a [h] story.
+// Every change is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed
+// texts are shown; server text never is. Uses element() and the views' reload functions from app.js at call time.
 
 const EditTexts = {
   edit: "Edit",
@@ -34,6 +34,7 @@ const EditTexts = {
   noCategory: "No category",
   dismiss: "Close",
   confirmDrop: "Drop this proposal? Its line and story file are removed in one commit.",
+  confirmDropApproved: "Drop this approved item? Its line and story file are removed in one commit.",
   moveStop: "Move stop line",
   removeStop: "Remove stop line",
   stopAfter: "Stop after this",
@@ -55,6 +56,7 @@ const ChangeErrors = {
   worktree_failed: "Could not prepare the backlog branch. Nothing was changed.",
   no_worktree: "The factory's develop worktree is missing. Nothing was changed.",
   stop_line: "This backlog has more than one stop line, or one with other text. Fix backlog.md first.",
+  waited_on: "Another item waits for this one (after:). Change or drop that item first. Nothing was changed.",
   unreachable: "Can't reach the server. Reload to see whether the change was saved.",
   notEditable: "This story can't be edited.",
   failed: "The change failed. Reload to see whether it was saved.",
@@ -179,8 +181,11 @@ function editRow(projectName, version, entry) {
   const send = (fields) => changeAndReload(Object.assign({ project: projectName, version: version, line: line }, fields));
   if (mark === "?") {
     row.appendChild(named(editButton(EditTexts.approve, "edit-primary", () => send({ action: "approve" }))));
+  }
+  if (mark === "?" || mark === " ") {
+    const question = mark === "?" ? EditTexts.confirmDrop : EditTexts.confirmDropApproved;
     row.appendChild(named(editButton(EditTexts.drop, "edit-danger", () => {
-      if (confirm(EditTexts.confirmDrop)) {
+      if (confirm(question)) {
         send({ action: "drop" });
       }
     })));

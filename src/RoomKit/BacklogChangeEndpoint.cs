@@ -93,6 +93,10 @@ internal static class BacklogChangeEndpoint
 
     public const string StopLineProblem = "stop_line";
 
+    /// <summary>A drop refused because another open line of the same backlog waits for the item
+    /// (<c>(after: #N)</c>).</summary>
+    public const string WaitedOn = "waited_on";
+
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
         "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
@@ -396,6 +400,11 @@ internal static class BacklogChangeEndpoint
         if (edit is null)
         {
             return InvalidPlan();
+        }
+
+        if (BacklogEditor.WaitedOn(text, line, project.Name))
+        {
+            return ChangePlan.Refused(StatusCodes.Status409Conflict, WaitedOn);
         }
 
         byte[] bytes = edit.Text.ToBytes();
