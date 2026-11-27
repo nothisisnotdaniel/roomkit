@@ -1,6 +1,8 @@
 # Runs RoomKit's tests on macOS (Apple silicon) and Windows for every pull request into develop and every push to
-# develop. A change to only backlog.md or backlog/ is skipped (paths-ignore). The job only reads: it has
-# contents: read and nothing else, and the checkout leaves no token in .git/config.
+# develop. A first job, changes, runs .github/scripts/ci_changes.py on the pushed commits (or the pull request from
+# its merge base): when only backlog.md, backlog/ or the Lessons section of a CLAUDE.md changed, the test job is
+# skipped and the run still ends green; any other change, and any doubt, runs the tests. Every job only reads: it
+# has contents: read and nothing else, and each checkout leaves no token in .git/config.
 # Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), the same as ControlRoom's.
 name: CI
 
@@ -8,20 +10,33 @@ on:
   pull_request:
     branches:
       - "develop"
-    paths-ignore:
-      - "backlog.md"
-      - "backlog/**"
   push:
     branches:
       - "develop"
-    paths-ignore:
-      - "backlog.md"
-      - "backlog/**"
 
 permissions: {}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tests: ${{ steps.changes.outputs.tests }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check what changed
+        id: changes
+        run: python3 .github/scripts/ci_changes.py
+
   test:
+    needs: changes
+    if: needs.changes.outputs.tests == 'true'
     strategy:
       fail-fast: false
       matrix:
