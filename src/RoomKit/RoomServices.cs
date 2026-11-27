@@ -2,7 +2,8 @@ namespace RoomKit;
 
 /// <summary>What an app's (or a module's) service hook gets before the host is built: the app's
 /// <see cref="Services"/>, its <see cref="Configuration"/> and <see cref="AddPushSource(IPushSource)"/>, the way to add a
-/// source of push events to RoomKit's push watcher.</summary>
+/// source of push events to RoomKit's push watcher, and <see cref="SetPushBadge(IPushBadgeSource)"/>, the way to put the
+/// app badge on every push RoomKit sends.</summary>
 public sealed class RoomServices
 {
     internal RoomServices(IServiceCollection services, IConfiguration configuration)
@@ -31,5 +32,33 @@ public sealed class RoomServices
         ArgumentNullException.ThrowIfNull(create);
         Services.AddSingleton(create);
         return this;
+    }
+
+    /// <summary>Sets the one badge source every push asks for its <c>badge</c> count. Throws
+    /// <see cref="InvalidOperationException"/> when a badge source was already set.</summary>
+    public RoomServices SetPushBadge(IPushBadgeSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        RefuseSecondBadge();
+        Services.AddSingleton(source);
+        return this;
+    }
+
+    /// <summary>Sets the one badge source, built from the app's services when the push sender is first needed. Throws
+    /// <see cref="InvalidOperationException"/> when a badge source was already set.</summary>
+    public RoomServices SetPushBadge(Func<IServiceProvider, IPushBadgeSource> create)
+    {
+        ArgumentNullException.ThrowIfNull(create);
+        RefuseSecondBadge();
+        Services.AddSingleton(create);
+        return this;
+    }
+
+    private void RefuseSecondBadge()
+    {
+        if (Services.Any(service => service.ServiceType == typeof(IPushBadgeSource)))
+        {
+            throw new InvalidOperationException("A push badge source is already set.");
+        }
     }
 }

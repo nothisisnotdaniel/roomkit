@@ -13,7 +13,10 @@ Each story has one `Category: <name>` line after its story sentence, one of: fea
 - [x] [#4](backlog/004-bring-the-accesstoken-and-projectgit-source.md) Bring the AccessToken and ProjectGit source-scan tests over from ControlRoom → 440-source-scan-tests.9982c43b979e4092badf81796391071e
 - [x] [#5](backlog/005-let-host-apps-hook-into-job.md) Let host apps hook into job-count loads and live change checks → 441-host-hook-registry.788d4a25e68b491789f7bf277df98fe8
 - [x] [#10](backlog/010-show-an-app-badge-on-the.md) Show an app badge on the home-screen icon from a push payload → 450-app-badge-from-push.ac68c852ba1d4128a06b3ef139c10f64
-- [h] [#6](backlog/006-release-roomkit-0-2-0-with.md) Release RoomKit 0.2.0 with the host hooks and app badge (after: #5; #10)
+- [x] [#6](backlog/006-release-roomkit-0-2-0-with.md) Release RoomKit 0.2.0 with the host hooks and app badge (after: #5; #10)
 - [x] [#9](backlog/009-mark-the-push-login-check-tests.md) Mark the push login check tests as skipped on Windows → 452-skip-login-tests-windows.d3c6416a9ef5463a82c8453bdcec7f15
 - [x] [#8](backlog/008-narrow-the-jq-error-output-of.md) Narrow the jq error output of the GitHub Packages login check → 453-narrow-jq-login-output.31198b44615f443ea2acd58283e4a21a
-- [stop] Auto stops here
+- [x] [#11](backlog/011-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85) → 478-skip-ci-backlog-lessons.a3b2facacfb140c9822e6b75cb113223
+- [x] [#12](backlog/012-let-a-host-set-the-app.md) Let a host set the app badge on the pushes the server sends → 479-push-badge-api.5bba845adb75430bb6b00dceb3c75d05
+- [x] [#13](backlog/013-report-the-updater-last-check-as.md) Report the updater last check as lastCheck in GET /api/update → 480-updater-last-check.56efae52ec1749feb4865da7a81a5b84
+- [x] [#14](backlog/014-bound-the-wait-on-a-host.md) Bound the wait on a host badge source before each push → 482-badge-source-timeout.9ae7d5f75430480bad6acb57678e4b4e

@@ -50,6 +50,32 @@ public sealed class RepoDocsTests
     }
 
     [Fact]
+    public void Docs_AppBadgeSection_NamesTheBadgeSourceAndItsSetter()
+    {
+        string docs = Read(Path.Combine("docs", "roomkit.md"));
+        int start = docs.IndexOf("\n### App badge\n", StringComparison.Ordinal);
+        Assert.True(start >= 0, "docs/roomkit.md has no App badge section");
+        int end = docs.IndexOf("\n#", start + 1, StringComparison.Ordinal);
+        string section = end < 0 ? docs[start..] : docs[start..end];
+
+        Assert.Contains("`IPushBadgeSource`", section, StringComparison.Ordinal);
+        Assert.Contains("SetPushBadge", section, StringComparison.Ordinal);
+        Assert.Contains("Push badge failed; sent without a badge", section, StringComparison.Ordinal);
+        Assert.Contains("Push badge timed out; sent without a badge", section, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Docs_NameLastCheck_ItsFormatAndNullCases()
+    {
+        string docs = Read(Path.Combine("docs", "roomkit.md"));
+
+        Assert.Contains("`lastCheck`", docs, StringComparison.Ordinal);
+        Assert.Contains("`yyyy-MM-ddTHH:mm:ssZ`", docs, StringComparison.Ordinal);
+        Assert.Contains("`last-check`", docs, StringComparison.Ordinal);
+        Assert.Contains("It is `null` when the stamp is missing", docs, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Repo_HoldsNoNuGetConfig()
     {
         string repo = RepoCopy.RepoFolder();

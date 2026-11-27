@@ -17,8 +17,12 @@ internal sealed record PushPayload(
     string? Previous = null,
     string? Code = null,
     string? Title = null,
-    string? Tag = null)
+    string? Tag = null,
+    int? Badge = null)
 {
+    /// <summary>The highest <c>badge</c> sent; a higher count is sent as this.</summary>
+    public const int MaxBadge = 999;
+
     public const string NeedsHuman = "needs-human";
 
     public const string MergeConflict = "merge-conflict";
@@ -65,7 +69,8 @@ internal sealed record PushPayload(
     /// unknown), <c>reason</c> and, for approvals, <c>count</c>. An update is exactly <c>kind</c>, <c>version</c> and
     /// <c>reason</c>; <c>updated</c> is exactly <c>kind</c>, <c>version</c>, <c>previous</c> and <c>reason</c>;
     /// <c>update_failed</c> is exactly <c>kind</c>, <c>version</c> and the code as <c>reason</c>. An app's
-    /// <see cref="PushEvent"/> (with a title) is exactly <c>kind</c>, <c>title</c> and <c>tag</c>.</summary>
+    /// <see cref="PushEvent"/> (with a title) is exactly <c>kind</c>, <c>title</c> and <c>tag</c>. With a
+    /// <see cref="Badge"/> of 0 or more, every shape ends with <c>badge</c> (at most <see cref="MaxBadge"/>).</summary>
     public byte[] ToJson()
     {
         using MemoryStream stream = new();
@@ -77,6 +82,7 @@ internal sealed record PushPayload(
             {
                 writer.WriteString("title", Title);
                 writer.WriteString("tag", Tag);
+                WriteBadge(writer);
                 writer.WriteEndObject();
                 writer.Flush();
                 return stream.ToArray();
@@ -95,6 +101,7 @@ internal sealed record PushPayload(
                     writer.WriteString("reason", Code);
                 }
 
+                WriteBadge(writer);
                 writer.WriteEndObject();
                 writer.Flush();
                 return stream.ToArray();
@@ -104,6 +111,7 @@ internal sealed record PushPayload(
             {
                 writer.WriteString("version", Version);
                 writer.WriteString("reason", Reasons[Kind]);
+                WriteBadge(writer);
                 writer.WriteEndObject();
                 writer.Flush();
                 return stream.ToArray();
@@ -130,10 +138,19 @@ internal sealed record PushPayload(
                 writer.WriteNumber("count", Count.Value);
             }
 
+            WriteBadge(writer);
             writer.WriteEndObject();
         }
 
         return stream.ToArray();
+    }
+
+    private void WriteBadge(Utf8JsonWriter writer)
+    {
+        if (Badge is int badge && badge >= 0)
+        {
+            writer.WriteNumber("badge", Math.Min(badge, MaxBadge));
+        }
     }
 }
 
@@ -163,10 +180,16 @@ internal sealed class PushTransport
 /// <summary>Sends one encrypted POST per stored subscription with <c>TTL</c>, <c>Urgency</c>,
 /// <c>Content-Encoding: aes128gcm</c> and a VAPID <c>Authorization</c>. Redirects are not followed and a request
 /// times out after 10 s. <c>404</c>/<c>410</c> removes the subscription; anything else keeps it. Only status codes
-/// are logged, never an endpoint or a key.</summary>
+/// are logged, never an endpoint or a key. With a host's <see cref="IPushBadgeSource"/>, each send asks it once and
+/// every subscription gets the same body with its <c>badge</c>. The sender waits at most <see cref="BadgeTimeout"/>
+/// (on its <see cref="TimeProvider"/>) for the count; when that runs out, the source's token is cancelled, its task is
+/// left to finish on its own (its result or exception ignored) and the push goes out without <c>badge</c>.</summary>
 internal sealed class PushSender
 {
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>The longest wait for the host's badge count before a push is sent without it.</summary>
+    public static readonly TimeSpan BadgeTimeout = TimeSpan.FromSeconds(2);
 
     public const string Ttl = "86400";
 
@@ -178,8 +201,16 @@ internal sealed class PushSender
 
     private readonly ILogger<PushSender> logger;
 
-    public PushSender(PushStore store, PushCrypto crypto, PushTransport transport, ILogger<PushSender> logger)
+    private readonly IPushBadgeSource? badge;
+
+    private readonly TimeProvider time;
+
+    public PushSender(
+        PushStore store, PushCrypto crypto, PushTransport transport, ILogger<PushSender> logger,
+        IPushBadgeSource? badge = null, TimeProvider? time = null)
     {
+        this.badge = badge;
+        this.time = time ?? TimeProvider.System;
         this.store = store;
         this.crypto = crypto;
         this.logger = logger;
@@ -191,6 +222,16 @@ internal sealed class PushSender
     public async Task<int> Send(PushPayload payload, CancellationToken cancellation)
     {
         (PushKeyPair keys, PushSettings settings) = store.Load();
+        if (settings.Subscriptions.Count == 0)
+        {
+            return 0;
+        }
+
+        if (badge is not null)
+        {
+            payload = payload with { Badge = await Badge(cancellation) };
+        }
+
         byte[] body = payload.ToJson();
         int sent = 0;
         List<string> gone = [];
@@ -213,6 +254,67 @@ internal sealed class PushSender
         }
 
         return sent;
+    }
+
+    /// <summary>The host's badge count, or null when its source fails or does not answer within
+    /// <see cref="BadgeTimeout"/> (each logged as a fixed text only). The source runs on the thread pool, so one that
+    /// blocks before returning its task is bounded too.</summary>
+    private async Task<int?> Badge(CancellationToken cancellation)
+    {
+        IPushBadgeSource source = badge!;
+        CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        CancellationToken token = linked.Token;
+        Task<int?> current = Task.Run(() => source.Current(token), CancellationToken.None);
+        try
+        {
+            int? count = await current.WaitAsync(BadgeTimeout, time, cancellation);
+            linked.Dispose();
+            return count;
+        }
+        catch (TimeoutException) when (current.Exception?.InnerException is not TimeoutException)
+        {
+            try
+            {
+                linked.Cancel();
+            }
+            catch (AggregateException)
+            {
+                // A callback the host registered on the token threw; the push still goes out.
+            }
+
+            Abandon(current, linked);
+            logger.LogWarning("Push badge timed out; sent without a badge");
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            Abandon(current, linked);
+            throw;
+        }
+        catch (Exception)
+        {
+            linked.Dispose();
+
+            // Never the exception's message: the host's text could hold paths or record text.
+            logger.LogWarning("Push badge failed; sent without a badge");
+            return null;
+        }
+    }
+
+    /// <summary>Lets a source task that was not waited for finish on its own: its exception is observed (so it never
+    /// becomes an unobserved-task exception) and ignored, and its token's source is disposed afterwards.</summary>
+    private static void Abandon(Task<int?> current, CancellationTokenSource linked)
+    {
+        _ = current.ContinueWith(
+            static (task, state) =>
+            {
+                _ = task.Exception;
+                ((CancellationTokenSource)state!).Dispose();
+            },
+            linked,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private async Task<SendResult> SendOne(

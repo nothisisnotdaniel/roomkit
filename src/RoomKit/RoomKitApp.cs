@@ -280,6 +280,7 @@ public static class RoomKitApp
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(new PushStore(folder));
         builder.Services.AddSingleton(new UpdateSettingsStore(folder, UnixOwner.CurrentUser()));
+        builder.Services.AddSingleton(new LastCheckReader(folder, UnixOwner.CurrentUser()));
         builder.Services.AddSingleton(_ => PushTransport.CreateDefault());
         builder.Services.AddSingleton(services => new PushCrypto(
             services.GetRequiredService<TimeProvider>(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, subject));

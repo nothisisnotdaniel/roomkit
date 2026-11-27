@@ -3,8 +3,9 @@ using System.Text.RegularExpressions;
 namespace RoomKit.Tests;
 
 /// <summary><c>.github/workflows/ci.yml</c> and <c>release.yml</c>, read as text with a line and indent parser: the
-/// triggers, the version job's <c>if:</c>, the jobs and their <c>needs:</c>, every permission block, the SHA pins,
-/// the checkouts, PR fields and tokens only through <c>env:</c>, and the release job's steps in order.</summary>
+/// triggers, ci.yml's change check, the <c>if:</c> of release.yml's version job and ci.yml's test job, the jobs and
+/// their <c>needs:</c>, every permission block, the SHA pins, the checkouts, PR fields and tokens only through
+/// <c>env:</c>, and the release job's steps in order.</summary>
 public sealed partial class WorkflowTests
 {
     private const string Feed = "https://nuget.pkg.github.com/nothisisnotdaniel/index.json";
@@ -274,7 +275,7 @@ public sealed partial class WorkflowTests
     }
 
     [Theory]
-    [InlineData("ci.yml", 2)]
+    [InlineData("ci.yml", 3)]
     [InlineData("release.yml", 6)]
     public void EveryAction_IsPinnedToTheSameCommitShaAsControlRoom(string file, int count)
     {
@@ -313,26 +314,55 @@ public sealed partial class WorkflowTests
         string yaml = Workflow("ci.yml");
 
         Assert.Equal(
-            "on:\n  pull_request:\n    branches:\n      - \"develop\"\n    paths-ignore:\n      - \"backlog.md\"\n"
-            + "      - \"backlog/**\"\n  push:\n    branches:\n      - \"develop\"\n    paths-ignore:\n"
-            + "      - \"backlog.md\"\n      - \"backlog/**\"\n",
+            "on:\n  pull_request:\n    branches:\n      - \"develop\"\n  push:\n    branches:\n      - \"develop\"\n",
             TopLevelBlock(yaml, "on:"));
         Assert.Single(TopLevelKey().Matches(yaml), match => match.Value == "on:");
+        Assert.DoesNotContain("paths-ignore", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("main", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("pull_request_target", yaml, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Ci_RunsTheTestsInReleaseOnMacOsAndWindows()
+    public void Ci_Jobs_AreChangesThenTest()
     {
         string yaml = Workflow("ci.yml");
 
-        Assert.Equal(["test"], JobNames(yaml));
-        string test = JobBlock(yaml, "test");
+        Assert.Equal(["changes", "test"], JobNames(yaml));
+        Assert.Equal([], NeededJobs(yaml, "changes"));
+        Assert.Equal(["changes"], NeededJobs(yaml, "test"));
+    }
+
+    [Fact]
+    public void Ci_ChangesJob_ChecksOutTheFullHistoryAndRunsTheChangeCheckOnUbuntu()
+    {
+        string changes = JobBlock(Workflow("ci.yml"), "changes");
+
+        Assert.Contains("\n    runs-on: ubuntu-latest\n", changes, StringComparison.Ordinal);
+        Assert.Equal(["contents: read"], Grants(changes));
+        Assert.Contains("\n    outputs:\n      tests: ${{ steps.changes.outputs.tests }}\n", changes, StringComparison.Ordinal);
+        Assert.Equal(["Check out", "Check what changed"], StepNames(changes));
+        Assert.Equal(
+            "        uses: actions/checkout@" + Pins["actions/checkout"] + " # v4.4.0\n        with:\n"
+            + "          persist-credentials: false\n          fetch-depth: 0\n",
+            Step(changes, "Check out"));
+        Assert.Equal("        id: changes\n        run: python3 .github/scripts/ci_changes.py\n", Step(changes, "Check what changed"));
+        Assert.DoesNotContain("\n    if:", changes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ci_TestJob_RunsOnlyWhenTheChangesNeedItAndRunsTheTestsInReleaseOnMacOsAndWindows()
+    {
+        string test = JobBlock(Workflow("ci.yml"), "test");
+
+        Assert.Contains("\n    needs: changes\n    if: needs.changes.outputs.tests == 'true'\n", test, StringComparison.Ordinal);
         Assert.Contains("\n        os: [macos-15, windows-latest]\n", test, StringComparison.Ordinal);
         Assert.Contains("\n    runs-on: ${{ matrix.os }}\n", test, StringComparison.Ordinal);
         Assert.Contains("\n      fail-fast: false\n", test, StringComparison.Ordinal);
         Assert.Equal(["Check out", "Set up .NET", "Test"], StepNames(test));
+        Assert.Equal(
+            "        uses: actions/checkout@" + Pins["actions/checkout"] + " # v4.4.0\n        with:\n"
+            + "          persist-credentials: false\n",
+            Step(test, "Check out"));
         Assert.Equal("        run: dotnet test RoomKit.slnx -c Release\n", Step(test, "Test"));
     }
 

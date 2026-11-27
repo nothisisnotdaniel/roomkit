@@ -9,7 +9,7 @@ namespace RoomKit.Tests;
 /// factory module and without any <c>--FactoryRoot</c>: the token file sits in its own temp folder (deleted on
 /// dispose), pushes go to <see cref="Push"/>, the update check to <see cref="Update"/>, and the clock is
 /// <see cref="Time"/>, whose timers never fire. <paramref name="sources"/> are registered through the public service
-/// hook. Clients send <c>Host: 127.0.0.1:8202</c>.</summary>
+/// hook, then <paramref name="addServices"/> (for example a badge source). Clients send <c>Host: 127.0.0.1:8202</c>.</summary>
 internal sealed class CoreServerFactory : IAsyncDisposable
 {
     private readonly TempTokenFolder tokenFolder = new();
@@ -17,6 +17,11 @@ internal sealed class CoreServerFactory : IAsyncDisposable
     private readonly WebApplication app;
 
     public CoreServerFactory(string environment = "Production", params IPushSource[] sources)
+        : this(null, environment, sources)
+    {
+    }
+
+    public CoreServerFactory(Action<RoomServices>? addServices, string environment = "Production", params IPushSource[] sources)
     {
         TokenFile = Path.Combine(tokenFolder.Path, "CoreRoom", AccessToken.FileName);
         StringWriter error = new();
@@ -37,6 +42,8 @@ internal sealed class CoreServerFactory : IAsyncDisposable
                 {
                     services.AddPushSource(source);
                 }
+
+                addServices?.Invoke(services);
             },
             builder =>
             {

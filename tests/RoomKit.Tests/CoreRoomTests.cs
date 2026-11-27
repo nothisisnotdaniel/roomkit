@@ -1,5 +1,6 @@
 using System.Net;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
@@ -283,6 +284,302 @@ public sealed class CoreRoomTests : IDisposable
         Assert.Contains(
             factory.Logs.Lines, line => line.StartsWith("Push source failed; its events are dropped", StringComparison.Ordinal));
         Assert.DoesNotContain(factory.Logs.Lines, line => line.Contains("secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PushBadge_IsAddedLastToAnAppEventAtEverySubscriptionWithOneCall()
+    {
+        QueuedPushSource source = new();
+        FakePushBadge badge = new(3);
+        await using CoreServerFactory factory = new(services => services.SetPushBadge(badge), sources: source);
+        HttpClient client = await factory.TokenClient();
+        using PushReceiver first = new();
+        using PushReceiver second = new();
+        (await PushTestData.Subscribe(client, first, PushTestData.AppleEndpoint)).Dispose();
+        (await PushTestData.Subscribe(client, second, PushTestData.AppleEndpoint + "-2")).Dispose();
+        source.Add(new PushEvent("pr-review", "Review wanted", "pr:7"));
+
+        await factory.Services.GetRequiredService<PushWatcher>().Scan();
+
+        Assert.Equal(2, factory.Push.Requests.Count);
+        Assert.Equal(
+            "{\"kind\":\"pr-review\",\"title\":\"Review wanted\",\"tag\":\"pr:7\",\"badge\":3}",
+            first.DecryptText(factory.Push.Requests[0].Body));
+        Assert.Equal(
+            "{\"kind\":\"pr-review\",\"title\":\"Review wanted\",\"tag\":\"pr:7\",\"badge\":3}",
+            second.DecryptText(factory.Push.Requests[1].Body));
+        Assert.Equal(1, badge.Calls);
+    }
+
+    [Fact]
+    public async Task PushBadge_IsNotAskedWithoutASubscription()
+    {
+        QueuedPushSource source = new();
+        FakePushBadge badge = new(3);
+        await using CoreServerFactory factory = new(services => services.SetPushBadge(badge), sources: source);
+        HttpClient client = await factory.TokenClient();
+        source.Add(new PushEvent("pr-review", "Review wanted", "pr:7"));
+
+        await factory.Services.GetRequiredService<PushWatcher>().Scan();
+        using HttpResponseMessage test = await client.PostAsync(PushEndpoint.TestRoute, null);
+
+        Assert.Equal(HttpStatusCode.OK, test.StatusCode);
+        Assert.Equal("{\"sent\":0}", await test.Content.ReadAsStringAsync());
+        Assert.Empty(factory.Push.Requests);
+        Assert.Equal(0, badge.Calls);
+    }
+
+    [Fact]
+    public async Task PushBadge_IsAddedToTheTestPush()
+    {
+        FakePushBadge badge = new(4);
+        await using CoreServerFactory factory = new(services => services.SetPushBadge(badge));
+        HttpClient client = await factory.TokenClient();
+        using PushReceiver receiver = new();
+        (await PushTestData.Subscribe(client, receiver, PushTestData.AppleEndpoint)).Dispose();
+
+        using HttpResponseMessage test = await client.PostAsync(PushEndpoint.TestRoute, null);
+
+        Assert.Equal(HttpStatusCode.OK, test.StatusCode);
+        PushRequest request = Assert.Single(factory.Push.Requests);
+        Assert.Equal(
+            "{\"kind\":\"test\",\"reason\":\"Test notification\",\"badge\":4}", receiver.DecryptText(request.Body));
+        Assert.Equal(1, badge.Calls);
+    }
+
+    [Fact]
+    public async Task PushBadge_IsAddedToTheUpdatePush()
+    {
+        FakePushBadge badge = new(5);
+        await using CoreServerFactory factory = new(services => services.SetPushBadge(badge));
+        HttpClient client = await factory.TokenClient();
+        using PushReceiver receiver = new();
+        (await PushTestData.Subscribe(client, receiver, PushTestData.AppleEndpoint)).Dispose();
+        using HttpResponseMessage flags = await client.PostAsync(
+            PushEndpoint.SettingsRoute, PushTestData.Json("{\"notifyUpdate\":true}"));
+        factory.Update.RespondWithTag("v1.1.0");
+        using UpdateChecker checker = new(
+            new UpdateState(), new RunningVersion("1.0.0"), new UpdateTransport(factory.Update),
+            factory.Services.GetRequiredService<UpdateSettingsStore>(), factory.Services.GetRequiredService<PushStore>(),
+            factory.Services.GetRequiredService<PushSender>(), factory.Time, factory.Logs.For<UpdateChecker>());
+
+        await checker.Check();
+        await factory.Update.WaitForRequests(1);
+
+        Assert.Equal(HttpStatusCode.OK, flags.StatusCode);
+        PushRequest request = Assert.Single(factory.Push.Requests);
+        Assert.Equal(
+            "{\"kind\":\"update\",\"version\":\"1.1.0\",\"reason\":\"Update available\",\"badge\":5}",
+            receiver.DecryptText(request.Body));
+    }
+
+    [Theory]
+    [InlineData(0, ",\"badge\":0")]
+    [InlineData(999, ",\"badge\":999")]
+    [InlineData(1000, ",\"badge\":999")]
+    [InlineData(-1, "")]
+    [InlineData(null, "")]
+    public async Task PushBadge_SendsZeroClampsAboveTheMaximumAndLeavesOutNullOrNegative(int? value, string expected)
+    {
+        using TempTokenFolder folder = new();
+        using PushReceiver receiver = new();
+        PushStore store = new(Path.Combine(folder.Path, "push"));
+        Assert.True(store.Subscribe(new PushSubscription(
+            PushTestData.AppleEndpoint, Base64Url.Encode(receiver.PublicKey), Base64Url.Encode(receiver.Auth))));
+        FakePushHandler handler = new();
+        FakePushBadge badge = new(value);
+        PushCrypto crypto = new(new FakeTime(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, null);
+        LogCapture logs = new();
+        PushSender sender = new(store, crypto, new PushTransport(handler), logs.For<PushSender>(), badge);
+
+        int sent = await sender.Send(new PushPayload(PushPayload.Test, null, null, null), CancellationToken.None);
+
+        Assert.Equal(1, sent);
+        PushRequest request = Assert.Single(handler.Requests);
+        Assert.Equal(
+            "{\"kind\":\"test\",\"reason\":\"Test notification\"" + expected + "}", receiver.DecryptText(request.Body));
+        Assert.DoesNotContain(logs.Lines, line => line.StartsWith("Push badge timed out", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PushBadge_TimeoutIsTwoSeconds()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(2), PushSender.BadgeTimeout);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PushBadge_AHangingSourceIsCutOffAtTheTimeoutAndThePushGoesOutWithoutABadge(bool sync)
+    {
+        using TempTokenFolder folder = new();
+        using PushReceiver receiver = new();
+        FakePushHandler handler = new();
+        LogCapture logs = new();
+        FakeTime time = new();
+        using FakePushBadge badge = new(3) { Hang = sync ? BadgeHang.Sync : BadgeHang.Async, Fail = "secret /Users/someone" };
+        PushSender sender = HangingSender(folder, receiver, handler, logs, badge, time);
+
+        Task<int> send = sender.Send(new PushPayload(PushPayload.Test, null, null, null), CancellationToken.None);
+        await time.WaitForTimer(PushSender.BadgeTimeout);
+        await badge.WaitForCall();
+        Assert.False(send.IsCompleted);
+        Assert.False(badge.Token.IsCancellationRequested);
+        Assert.Equal(1, time.Fire(PushSender.BadgeTimeout));
+        int sent = await send.WaitAsync(FakeUpdateHandler.WaitLimit);
+
+        Assert.Equal(1, sent);
+        PushRequest request = Assert.Single(handler.Requests);
+        Assert.Equal("{\"kind\":\"test\",\"reason\":\"Test notification\"}", receiver.DecryptText(request.Body));
+        Assert.True(badge.Token.IsCancellationRequested);
+        Assert.Contains(time.Timers, timer => timer.Due == PushSender.BadgeTimeout);
+        Assert.Contains(
+            logs.Lines, line => line.StartsWith("Push badge timed out; sent without a badge", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Lines, line => line.StartsWith("Push badge failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Lines, line => line.Contains("secret", StringComparison.Ordinal));
+        Assert.Equal(1, badge.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PushBadge_CancellingTheCallerWhileTheSourceHangsThrowsAndSendsNothing(bool sync)
+    {
+        using TempTokenFolder folder = new();
+        using PushReceiver receiver = new();
+        FakePushHandler handler = new();
+        LogCapture logs = new();
+        FakeTime time = new();
+        using FakePushBadge badge = new(3) { Hang = sync ? BadgeHang.Sync : BadgeHang.Async };
+        using CancellationTokenSource caller = new();
+        PushSender sender = HangingSender(folder, receiver, handler, logs, badge, time);
+
+        Task<int> send = sender.Send(new PushPayload(PushPayload.Test, null, null, null), caller.Token);
+        await time.WaitForTimer(PushSender.BadgeTimeout);
+        await badge.WaitForCall();
+        await caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send.WaitAsync(FakeUpdateHandler.WaitLimit));
+        Assert.Empty(handler.Requests);
+        Assert.True(badge.Token.IsCancellationRequested);
+        Assert.DoesNotContain(logs.Lines, line => line.StartsWith("Push badge", StringComparison.Ordinal));
+    }
+
+    /// <summary>A sender over one stored subscription for <paramref name="receiver"/>, with the badge source and the
+    /// manual clock.</summary>
+    private static PushSender HangingSender(
+        TempTokenFolder folder, PushReceiver receiver, FakePushHandler handler, LogCapture logs, FakePushBadge badge,
+        FakeTime time)
+    {
+        PushStore store = new(Path.Combine(folder.Path, "push"));
+        Assert.True(store.Subscribe(new PushSubscription(
+            PushTestData.AppleEndpoint, Base64Url.Encode(receiver.PublicKey), Base64Url.Encode(receiver.Auth))));
+        PushCrypto crypto = new(new FakeTime(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, null);
+        return new PushSender(store, crypto, new PushTransport(handler), logs.For<PushSender>(), badge, time);
+    }
+
+    [Fact]
+    public void PushPayload_WithoutABadgeIsWhatItWasForEveryShape()
+    {
+        Assert.Equal(
+            "{\"kind\":\"test\",\"reason\":\"Test notification\"}",
+            Encoding.UTF8.GetString(new PushPayload(PushPayload.Test, null, null, null).ToJson()));
+        Assert.Equal(
+            "{\"kind\":\"update\",\"version\":\"1.1.0\",\"reason\":\"Update available\"}",
+            Encoding.UTF8.GetString(
+                new PushPayload(PushPayload.Update, null, null, null, Version: "1.1.0").ToJson()));
+        Assert.Equal(
+            "{\"kind\":\"approval\",\"project\":\"Alpha\",\"reason\":\"New items to approve\",\"count\":2,\"badge\":7}",
+            Encoding.UTF8.GetString(
+                new PushPayload(PushPayload.Approval, "Alpha", null, null, Count: 2, Badge: 7).ToJson()));
+        Assert.Equal(
+            "{\"kind\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\",\"reason\":\"Updated\",\"badge\":1}",
+            Encoding.UTF8.GetString(
+                new PushPayload(PushPayload.Updated, null, null, null, Version: "1.3.0", Previous: "1.2.0", Badge: 1).ToJson()));
+        Assert.Equal(
+            "{\"kind\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"verify_failed\",\"badge\":1}",
+            Encoding.UTF8.GetString(
+                new PushPayload(PushPayload.UpdateFailed, null, null, null, Version: "1.3.0", Code: "verify_failed", Badge: 1).ToJson()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PushBadge_AFailingSourceStillSendsWithoutABadgeAndLogsOnlyAFixedText(bool faulted)
+    {
+        QueuedPushSource source = new();
+        FakePushBadge badge = new(3) { Fail = "secret /Users/someone", Faulted = faulted };
+        await using CoreServerFactory factory = new(services => services.SetPushBadge(badge), sources: source);
+        HttpClient client = await factory.TokenClient();
+        using PushReceiver first = new();
+        using PushReceiver second = new();
+        (await PushTestData.Subscribe(client, first, PushTestData.AppleEndpoint)).Dispose();
+        (await PushTestData.Subscribe(client, second, PushTestData.AppleEndpoint + "-2")).Dispose();
+        source.Add(new PushEvent("pr-review", "Review wanted", "pr:7"));
+
+        await factory.Services.GetRequiredService<PushWatcher>().Scan();
+
+        Assert.Equal(2, factory.Push.Requests.Count);
+        Assert.Equal(
+            "{\"kind\":\"pr-review\",\"title\":\"Review wanted\",\"tag\":\"pr:7\"}",
+            first.DecryptText(factory.Push.Requests[0].Body));
+        Assert.Equal(
+            "{\"kind\":\"pr-review\",\"title\":\"Review wanted\",\"tag\":\"pr:7\"}",
+            second.DecryptText(factory.Push.Requests[1].Body));
+        Assert.Contains(
+            factory.Logs.Lines, line => line.StartsWith("Push badge failed; sent without a badge", StringComparison.Ordinal));
+        Assert.DoesNotContain(factory.Logs.Lines, line => line.Contains("secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SetPushBadge_RefusesNullAndASecondSourceAndBuildsTheFactoryOneFromTheServices()
+    {
+        FakePushBadge badge = new(6);
+        Exception? nullSource = null;
+        Exception? nullFactory = null;
+        Exception? second = null;
+        Exception? secondFactory = null;
+        await using CoreServerFactory factory = new(services =>
+        {
+            nullSource = Record.Exception(() => services.SetPushBadge((IPushBadgeSource)null!));
+            nullFactory = Record.Exception(() => services.SetPushBadge((Func<IServiceProvider, IPushBadgeSource>)null!));
+            Assert.Same(services, services.SetPushBadge(provider =>
+            {
+                badge.BuiltFrom = provider;
+                return badge;
+            }));
+            second = Record.Exception(() => services.SetPushBadge(new FakePushBadge(1)));
+            secondFactory = Record.Exception(() => services.SetPushBadge(_ => new FakePushBadge(1)));
+        });
+        HttpClient client = await factory.TokenClient();
+        using PushReceiver receiver = new();
+        (await PushTestData.Subscribe(client, receiver, PushTestData.AppleEndpoint)).Dispose();
+
+        using HttpResponseMessage test = await client.PostAsync(PushEndpoint.TestRoute, null);
+
+        Assert.IsType<ArgumentNullException>(nullSource);
+        Assert.IsType<ArgumentNullException>(nullFactory);
+        Assert.IsType<InvalidOperationException>(second);
+        Assert.IsType<InvalidOperationException>(secondFactory);
+        Assert.Same(badge, factory.Services.GetRequiredService<IPushBadgeSource>());
+        Assert.Same(factory.Time, badge.BuiltFrom!.GetRequiredService<TimeProvider>());
+        PushRequest request = Assert.Single(factory.Push.Requests);
+        Assert.Equal(
+            "{\"kind\":\"test\",\"reason\":\"Test notification\",\"badge\":6}", receiver.DecryptText(request.Body));
+    }
+
+    [Fact]
+    public async Task SetPushBadge_RefusesAPlainSourceAfterAnother()
+    {
+        Exception? second = null;
+        await using CoreServerFactory factory = new(services =>
+        {
+            Assert.Same(services, services.SetPushBadge(new FakePushBadge(1)));
+            second = Record.Exception(() => services.SetPushBadge(new FakePushBadge(2)));
+        });
+
+        Assert.IsType<InvalidOperationException>(second);
+        Assert.Single(factory.Services.GetServices<IPushBadgeSource>());
     }
 
     [Theory]
